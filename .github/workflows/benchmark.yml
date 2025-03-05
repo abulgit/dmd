@@ -1,0 +1,64 @@
+name: Performance Benchmark
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install D Compiler
+        uses: dlang-community/setup-dlang@v1
+        with:
+          compiler: dmd-2.109.1  
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Build dmdbranch
+        run: |
+          make -f Makefile HOST_DMD=dmd
+          mv generated/linux/release/64/dmd dmdbranch  
+
+      - name: Checkout master branch
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          path: master
+
+      - name: Build dmdmaster
+        run: |
+          cd master
+          make -f Makefile HOST_DMD=dmd
+          mv generated/linux/release/64/dmd ../dmdmaster 
+
+      - name: Install benchmarking tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y hyperfine time
+          git clone https://github.com/dlang/phobos.git
+
+      - name: Run performance tests
+        run: |
+          echo "Current directory contents:"
+          hyperfine \
+            --warmup 1 \
+            --runs 5 \
+            --export-json hyperfine_results.json \
+            --show-output \
+            "./dmdmaster -I./phobos -I./generated/linux/release/64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64/phobos -i=phobos -c -unittest -version=StdUnittest -preview=dip1000 phobos/std/stdio.d" \
+            "./dmdbranch -I./phobos -I./generated/linux/release/64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64/phobos -i=phobos -c -unittest -version=StdUnittest -preview=dip1000 phobos/std/stdio.d"
+
+          # Capture memory usage with time
+          /usr/bin/time -v -o master_time.txt ./dmdmaster -I./phobos -I./generated/linux/release/64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64/phobos -i=phobos -c -unittest -version=StdUnittest -preview=dip1000 phobos/std/stdio.d
+          /usr/bin/time -v -o pr_time.txt ./dmdbranch -I./phobos -I./generated/linux/release/64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64 -I/opt/hostedtoolcache/dc/dmd-2.109.1/x64/dmd2/linux/lib64/phobos -i=phobos -c -unittest -version=StdUnittest -preview=dip1000 phobos/std/stdio.d
+
+      # Post results to PR
+      - name: Create benchmark report
+        uses: actions/github-script@v6
+        with:
+          script: 
+            #Some Script to post the results to the PR
