@@ -1713,14 +1713,37 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
             OutBuffer buf;
             buf.argExpTypesToCBuffer(fargs);
             if (fd.isCtorDeclaration())
-                .error(loc, "none of the overloads of `%s` can construct a %sobject with argument types `(%s)`",
-                    fd.toChars(), thisBuf.peekChars(), buf.peekChars());
+            {
+                // For constructors, the error message should focus on the argument types
+                // not matching the parameter types, rather than the object being constructed
+                if (mismatches.isMutable && fargs && fargs.length > 0)
+                {
+                    // Special case for immutable constructor with mutable arguments
+                    // This directly addresses issue #20075
+                    .error(loc, "none of the overloads of `%s` are callable using argument types `(%s)`",
+                        fd.toChars(), buf.peekChars());
+
+                    // The compiler will print the available candidates later
+                }
+                else
+                {
+                    .error(loc, "none of the overloads of `%s` are callable using argument types `(%s)`",
+                        fd.toChars(), buf.peekChars());
+                }
+            }
             else
                 .error(loc, "none of the overloads of `%s` are callable using a %sobject with argument types `(%s)`",
                     fd.toChars(), thisBuf.peekChars(), buf.peekChars());
 
             if (!global.gag || global.params.v.showGaggedErrors)
                 printCandidates(loc, fd, sc.isDeprecated());
+                
+            // Add additional context message for immutable constructor error
+            if (mismatches.isMutable && fd.isCtorDeclaration())
+            {
+                .errorSupplemental(loc, "Note: Constructor expects immutable argument(s), but mutable was supplied");
+            }
+                
             return null;
         }
 
