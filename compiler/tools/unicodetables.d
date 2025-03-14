@@ -1,5 +1,5 @@
 /**
-Generates the Unicode tables and associated Identifier tables for dmd-fe.
+Generates the  Unicode tables and associated Identifier tables for dmd-fe.
 
 These tables are stored in ``dmd.common.identifiertables``.
 They are C99, C11, UAX31 and a least restrictive set (All).
