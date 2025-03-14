@@ -1743,7 +1743,7 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
             {
                 .errorSupplemental(loc, "Note: Constructor expects immutable argument(s), but mutable was supplied");
             }
-                
+
             return null;
         }
 
