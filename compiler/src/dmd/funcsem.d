@@ -1737,7 +1737,7 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
 
             if (!global.gag || global.params.v.showGaggedErrors)
                 printCandidates(loc, fd, sc.isDeprecated());
-                
+
             // Add additional context message for immutable constructor error
             if (mismatches.isMutable && fd.isCtorDeclaration())
             {
