@@ -328,6 +328,7 @@ void funcDeclarationSemantic(Scope* sc, FuncDeclaration funcdecl)
              *    static auto boo() {}   // typed as impure
              *    // Even though, boo cannot call any impure functions.
              *    // See also Expression::checkPurity().
+             *  }
              */
             if (tf.purity == PURE.impure && (funcdecl.isNested() || funcdecl.isThis()))
             {
@@ -1713,36 +1714,19 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
             buf.argExpTypesToCBuffer(fargs);
             if (fd.isCtorDeclaration())
             {
-                // For constructors, the error message should focus on the argument types
-                // not matching the parameter types, rather than the object being constructed
-                if (mismatches.isMutable && fargs && fargs.length > 0)
-                {
-                    // Special case for immutable constructor with mutable arguments
-                    // This directly addresses issue #20075
-                    .error(loc, "none of the overloads of `%s` can construct an immutable object with argument types `(%s)`",
-                        fd.toChars(), buf.peekChars());
-
-                    // The compiler will print the available candidates later
-                }
+                if (tthis.mod & MODFlags.immutable_)
+                    .error(loc, "none of the overloads of `%s` can construct an immutable object with argument types `(%s)`. Expected `immutable(%s)`",
+                        fd.toChars(), buf.peekChars(), buf.peekChars());
                 else
-                {
-                    .error(loc, "none of the overloads of `%s` can construct a %s object with argument types `(%s)`",
+                    .error(loc, "none of the overloads of `%s` can construct a %sobject with argument types `(%s)`",
                         fd.toChars(), thisBuf.peekChars(), buf.peekChars());
-                }
             }
             else
-                .error(loc, "none of the overloads of `%s` are callable using a %s object with argument types `(%s)`",
+                .error(loc, "none of the overloads of `%s` are callable using a %sobject with argument types `(%s)`",
                     fd.toChars(), thisBuf.peekChars(), buf.peekChars());
 
             if (!global.gag || global.params.v.showGaggedErrors)
                 printCandidates(loc, fd, sc.isDeprecated());
-
-            // Add additional context message for immutable constructor error
-            if (mismatches.isMutable && fd.isCtorDeclaration())
-            {
-                .errorSupplemental(loc, "Note: Constructor expects immutable argument(s), but mutable was supplied");
-            }
-
             return null;
         }
 
@@ -1761,10 +1745,10 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
             return null;
 
         if (fd.isCtorDeclaration())
-            .error(loc, "%s%s `%s` cannot construct a %s object",
+            .error(loc, "%s%s `%s` cannot construct a %sobject",
                    funcBuf.peekChars(), fd.kind(), fd.toPrettyChars(), thisBuf.peekChars());
         else
-            .error(loc, "%smethod `%s` is not callable using a %s object",
+            .error(loc, "%smethod `%s` is not callable using a %sobject",
                    funcBuf.peekChars(), fd.toPrettyChars(), thisBuf.peekChars());
 
         if (mismatches.isNotShared)
@@ -2245,7 +2229,7 @@ FuncDeclaration overloadModMatch(FuncDeclaration thisfd, Loc loc, Type tthis, re
             OutBuffer thisBuf, funcBuf;
             MODMatchToBuffer(&thisBuf, tthis.mod, tf.mod);
             MODMatchToBuffer(&funcBuf, tf.mod, tthis.mod);
-            .error(loc, "%smethod %s is not callable using a %s object", thisfd.kind, thisfd.toPrettyChars,
+            .error(loc, "%smethod %s is not callable using a %sobject", thisfd.kind, thisfd.toPrettyChars,
                 funcBuf.peekChars(), thisfd.toPrettyChars(), thisBuf.peekChars());
         }
     }
