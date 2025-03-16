@@ -323,12 +323,10 @@ void funcDeclarationSemantic(Scope* sc, FuncDeclaration funcdecl)
              *    auto bar() {}     // become a weak purity function
              *    class C {         // nested class
              *      auto baz() {}   // become a weak purity function
-             *    }
              *
              *    static auto boo() {}   // typed as impure
              *    // Even though, boo cannot call any impure functions.
              *    // See also Expression::checkPurity().
-             *  }
              */
             if (tf.purity == PURE.impure && (funcdecl.isNested() || funcdecl.isThis()))
             {
@@ -1530,7 +1528,7 @@ enum FuncResolveFlag : ubyte
 FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
     Objects* tiargs, Type tthis, ArgumentList argumentList, FuncResolveFlag flags)
 {
-    //printf("resolveFuncCall() %s\n", s.toChars());
+    //printf("resolveFuncCall() %s)\n", s.toChars());
     auto fargs = argumentList.arguments;
     if (!s)
         return null; // no match
@@ -1658,14 +1656,46 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
             {
                 .error(loc, "%s `%s` is not callable using argument types `!(%s)%s`",
                    td.kind(), td.ident.toChars(), tiargsBuf.peekChars(), fargsBuf.peekChars());
+                
+                // Check for missing template parameters
+                if (tiargs == null || tiargs.length == 0)
+                {
+                    foreach (i, param; *(td.parameters))
+                    {
+                        if (!param.isTemplateTupleParameter() && !param.hasDefaultArg())
+                        {
+                            .errorSupplemental(loc, "missing argument for template parameter #%d: `%s`", 
+                                   cast(int)(i + 1), param.ident.toChars());
+                            break; // Show just the first missing parameter to avoid cluttering the output
+                        }
+                    }
+                }
             }
             else
             {
                 .error(loc, "none of the overloads of %s `%s.%s` are callable using argument types `!(%s)%s`",
                    td.kind(), td.parent.toPrettyChars(), td.ident.toChars(),
                    tiargsBuf.peekChars(), fargsBuf.peekChars());
+                
+                // Check for missing template parameters in the most likely candidate
+                if (tiargs == null || tiargs.length == 0)
+                {
+                    // Identify the most likely candidate from the overload set
+                    TemplateDeclaration candidate = td;
+                    if (candidate && candidate.parameters && candidate.parameters.length > 0)
+                    {
+                        foreach (i, param; *(candidate.parameters))
+                        {
+                            if (!param.isTemplateTupleParameter() && !param.hasDefaultArg())
+                            {
+                                .errorSupplemental(loc, "missing argument for template parameter #%d: `%s`", 
+                                       cast(int)(i + 1), param.ident.toChars());
+                                break; // Just the first missing parameter
+                            }
+                        }
+                    }
+                }
             }
-
 
             if (!global.gag || global.params.v.showGaggedErrors)
                 printCandidates(loc, td, sc.isDeprecated());
@@ -1684,6 +1714,37 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
     {
         .error(loc, "none of the overloads of `%s` are callable using argument types `!(%s)%s`",
                od.ident.toChars(), tiargsBuf.peekChars(), fargsBuf.peekChars());
+        
+        // Check for missing template parameters in overload declaration candidates
+        if (tiargs == null || tiargs.length == 0)
+        {
+            // Try to find a template declaration from the overload set
+            bool found = false;
+            overloadApply(od, (Dsymbol s)
+            {
+                if (found)
+                    return 0;
+                    
+                if (auto td = s.isTemplateDeclaration())
+                {
+                    if (td.parameters && td.parameters.length > 0)
+                    {
+                        foreach (i, param; *(td.parameters))
+                        {
+                            if (!param.isTemplateTupleParameter() && !param.hasDefaultArg())
+                            {
+                                .errorSupplemental(loc, "missing argument for template parameter #%d: `%s`", 
+                                       cast(int)(i + 1), param.ident.toChars());
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                return 0;
+            });
+        }
+        
         if (!global.gag || global.params.v.showGaggedErrors)
             printCandidates(loc, od, sc.isDeprecated());
         return null;
@@ -1788,6 +1849,25 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
                                 fd.toChars(), mErr.lastf.toPrettyChars(), tthis.toChars());
                         return null;
                     }
+                }
+            }
+        }
+    }
+    
+    // Check if this is a template function with no template arguments provided
+    if (fd.parent && fd.parent.isTemplateDeclaration())
+    {
+        auto parentTd = fd.parent.isTemplateDeclaration();
+        if (parentTd && parentTd.parameters && parentTd.parameters.length > 0 && (tiargs == null || tiargs.length == 0))
+        {
+            // Look for missing template parameters
+            foreach (i, param; *(parentTd.parameters))
+            {
+                if (!param.isTemplateTupleParameter() && !param.hasDefaultArg())
+                {
+                    .errorSupplemental(loc, "missing argument for template parameter #%d: `%s`", 
+                                       cast(int)(i + 1), param.ident.toChars());
+                    break;
                 }
             }
         }
