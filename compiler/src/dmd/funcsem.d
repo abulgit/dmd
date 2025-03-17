@@ -984,24 +984,20 @@ void funcDeclarationSemantic(Scope* sc, FuncDeclaration funcdecl)
                         error(funcdecl.loc, "function `%s` does not override any function, did you mean to override `%s`?",
                             funcdeclToChars, buf1.peekChars());
 
-                        // A more detailed error message showing the difference between signatures
+                        // Only add supplemental error for parameter scope differences
                         auto tf1 = cast(TypeFunction)funcdecl.type;
                         auto tf2 = cast(TypeFunction)fd.type;
 
-                        // Only show diff if both are function types
                         if (tf1 && tf2)
                         {
-                            // Get parameter lists
                             auto params1 = tf1.parameterList;
                             auto params2 = tf2.parameterList;
 
-                            // Show the function signature that would be correct
-                            errorSupplemental(funcdecl.loc, "Did you intend to override:");
-                            errorSupplemental(funcdecl.loc, "`%s`", buf1.peekChars());
-
-                            // If parameter counts match, show detailed diff for each parameter
+                            // Only check for scope differences if parameter counts match
                             if (params1.length == params2.length)
                             {
+                                bool hasScopeDifference = false;
+                                
                                 for (size_t i = 0; i < params1.length; i++)
                                 {
                                     auto p1 = params1[i];
@@ -1011,15 +1007,18 @@ void funcDeclarationSemantic(Scope* sc, FuncDeclaration funcdecl)
                                     if ((p1.storageClass & STC.scope_) != (p2.storageClass & STC.scope_))
                                     {
                                         if (p2.storageClass & STC.scope_)
+                                        {
+                                            if (!hasScopeDifference)
+                                            {
+                                                // Only show the intended signature once
+                                                errorSupplemental(funcdecl.loc, "Did you intend to override:");
+                                                errorSupplemental(funcdecl.loc, "`%s`", buf1.peekChars());
+                                                hasScopeDifference = true;
+                                            }
                                             errorSupplemental(funcdecl.loc, "Parameter %d is missing `scope`", cast(int)(i + 1));
+                                        }
                                     }
                                 }
-                            }
-                            else
-                            {
-                                // If parameter counts don't match, show that
-                                errorSupplemental(funcdecl.loc, "Parameter count mismatch: %d vs %d",
-                                    cast(int)params1.length, cast(int)params2.length);
                             }
                         }
                    }
