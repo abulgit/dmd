@@ -997,7 +997,7 @@ void funcDeclarationSemantic(Scope* sc, FuncDeclaration funcdecl)
                             if (params1.length == params2.length)
                             {
                                 bool hasScopeDifference = false;
-                                
+
                                 for (size_t i = 0; i < params1.length; i++)
                                 {
                                     auto p1 = params1[i];
