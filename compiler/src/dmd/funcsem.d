@@ -983,6 +983,45 @@ void funcDeclarationSemantic(Scope* sc, FuncDeclaration funcdecl)
 
                         error(funcdecl.loc, "function `%s` does not override any function, did you mean to override `%s`?",
                             funcdeclToChars, buf1.peekChars());
+
+                        // A more detailed error message showing the difference between signatures
+                        auto tf1 = cast(TypeFunction)funcdecl.type;
+                        auto tf2 = cast(TypeFunction)fd.type;
+
+                        // Only show diff if both are function types
+                        if (tf1 && tf2)
+                        {
+                            // Get parameter lists
+                            auto params1 = tf1.parameterList;
+                            auto params2 = tf2.parameterList;
+
+                            // Show the function signature that would be correct
+                            errorSupplemental(funcdecl.loc, "Did you intend to override:");
+                            errorSupplemental(funcdecl.loc, "`%s`", buf1.peekChars());
+
+                            // If parameter counts match, show detailed diff for each parameter
+                            if (params1.length == params2.length)
+                            {
+                                for (size_t i = 0; i < params1.length; i++)
+                                {
+                                    auto p1 = params1[i];
+                                    auto p2 = params2[i];
+
+                                    // Check for scope difference
+                                    if ((p1.storageClass & STC.scope_) != (p2.storageClass & STC.scope_))
+                                    {
+                                        if (p2.storageClass & STC.scope_)
+                                            errorSupplemental(funcdecl.loc, "Parameter %d is missing `scope`", cast(int)(i + 1));
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // If parameter counts don't match, show that
+                                errorSupplemental(funcdecl.loc, "Parameter count mismatch: %d vs %d",
+                                    cast(int)params1.length, cast(int)params2.length);
+                            }
+                        }
                    }
                 }
                 else
