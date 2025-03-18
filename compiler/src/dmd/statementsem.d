@@ -1961,7 +1961,7 @@ Statement statementSemanticVisit(Statement s, Scope* sc)
                 ed = ds.isEnumDeclaration();
 
             // We need to check semantic2 status as enum member values are fully processed in semantic2
-            if (ed && (ed.semanticRun < PASS.semanticdone || 
+            if (ed && (ed.semanticRun < PASS.semanticdone ||
                      (ed.semanticRun < PASS.semantic2done && ed.members)))
             {
                 error(ss.loc, "cannot use `final switch` on enum `%s` while it is being defined", ed.toChars());
