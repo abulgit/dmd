@@ -525,6 +525,14 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         if (emprev.errors)
             return errorReturn();
 
+        // Check early if the enum's base type is another enum
+        if (em.ed.memtype && em.ed.memtype.ty == Tenum)
+        {
+            error(em.loc, "%s `%s` value cannot be automatically defined because the base type `%s` does not support increment",
+                  em.kind, em.toPrettyChars(), em.ed.memtype.toChars());
+            return errorReturn();
+        }
+
         auto errors = global.startGagging();
         Expression eprev = emprev.value;
         assert(eprev);
@@ -542,7 +550,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         emax = emax.ctfeInterpret();
 
         // check that (eprev != emax)
-        Expression e = new EqualExp(EXP.equal, em.loc, eprev, emax);
+        Expression e = new EqualExp(EXP.equal, em.ed.loc, eprev, emax);
         e = e.expressionSemantic(sc);
         e = e.ctfeInterpret();
         if (global.endGagging(errors))
@@ -553,7 +561,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
             Expression e2 = DotIdExp.create(em.ed.loc, new TypeExp(em.ed.loc, tprev), Id.max);
             e2 = e2.expressionSemantic(sc);
             e2 = e2.ctfeInterpret();
-            e2 = new EqualExp(EXP.equal, em.loc, eprev, e2);
+            e2 = new EqualExp(EXP.equal, em.ed.loc, eprev, e2);
             e2 = e2.expressionSemantic(sc);
             e2 = e2.ctfeInterpret();
         }
@@ -569,6 +577,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         }
         errors = global.startGagging();
         // Now set e to (eprev + 1)
+        
         e = new AddExp(em.loc, eprev, IntegerExp.literal!1);
         e = e.expressionSemantic(sc);
         e = e.castTo(sc, eprev.type);
@@ -581,6 +590,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
             e2 = e2.expressionSemantic(sc);
             e2 = e2.castTo(sc, eprev.type);
             e2 = e2.ctfeInterpret();
+            return errorReturn();
         }
         // save origValue (without cast) for better json output
         if (e.op != EXP.error) // avoid duplicate diagnostics
