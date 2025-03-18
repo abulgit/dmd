@@ -1959,6 +1959,15 @@ Statement statementSemanticVisit(Statement s, Scope* sc)
                 ed = ds.isEnumDeclaration(); // typedef'ed enum
             if (!ed && te && ((ds = te.toDsymbol(sc)) !is null))
                 ed = ds.isEnumDeclaration();
+
+            // Replace the above check with this better check
+            if (ed && (ed.semanticRun < PASS.semanticdone || ed.semanticRun < PASS.semantic2done))
+            {
+                error(ss.loc, "cannot use `final switch` on enum `%s` while it is being defined", ed.toChars());
+                sc.pop();
+                return setError();
+            }
+
             if (ed && ss.cases.length < ed.members.length)
             {
                 int missingMembers = 0;
