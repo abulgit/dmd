@@ -131,14 +131,48 @@ private extern(C++) final class Semantic2Visitor : Visitor
         ed.semanticRun = PASS.semantic2;
 
         if (!ed.members)
+        {
+            ed.semanticRun = PASS.semantic2done;
             return;
+        }
 
-        // Process all enum members to compute their values
+        if (ed.semanticRun < PASS.semantic)
+        {
+            // Forward reference - need to run semantic first
+            dsymbolSemantic(ed, sc);
+            if (ed.semanticRun != PASS.semantic)
+                return; // semantic not complete
+        }
+
+        // Actually process the enum members and compute their values
+        // This was moved from semantic1 to semantic2 to avoid circular references
+        // with final switch statements
+        Scope* sce = null;
+        if (ed.isAnonymous())
+            sce = sc;
+        else if (ed._scope)
+        {
+            sce = ed._scope.startCTFE();
+            sce.setNoFree();
+        }
+        else
+        {
+            // Create a new scope for the enum members
+            sce = sc.push(ed);
+            sce.parent = ed;
+            sce = sce.startCTFE();
+            sce.setNoFree();
+        }
+
+        // Process all the enum members
         for (size_t i = 0; i < ed.members.length; i++)
         {
             EnumMember em = (*ed.members)[i].isEnumMember();
-            if (em && em.semanticRun < PASS.semanticdone)
+            if (em)
+            {
+                em._scope = sce;
                 em.dsymbolSemantic(em._scope);
+            }
         }
 
         // Now that all member values are calculated, we can mark the enum as semantic2done
