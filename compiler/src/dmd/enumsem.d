@@ -236,6 +236,11 @@ void enumSemantic(Scope* sc, EnumDeclaration ed)
         if (EnumMember em = s.isEnumMember())
             em.dsymbolSemantic(em._scope);
     });
+
+    // Don't set to PASS.semanticdone here, semantic2 will complete the analysis
+    // and set it to PASS.semantic2done
+    if (!sc.inCfile)  // C enum remains incomplete until members are done
+        ed.semanticRun = PASS.semantic;
     //printf("ed.defaultval = %lld\n", ed.defaultval);
 
     //if (ed.defaultval) printf("ed.defaultval: %s %s\n", ed.defaultval.toChars(), ed.defaultval.type.toChars());
@@ -542,7 +547,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         emax = emax.ctfeInterpret();
 
         // check that (eprev != emax)
-        Expression e = new EqualExp(EXP.equal, em.loc, eprev, emax);
+        Expression e = new EqualExp(EXP.equal, em.ed.loc, eprev, emax);
         e = e.expressionSemantic(sc);
         e = e.ctfeInterpret();
         if (global.endGagging(errors))
@@ -553,7 +558,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
             Expression e2 = DotIdExp.create(em.ed.loc, new TypeExp(em.ed.loc, tprev), Id.max);
             e2 = e2.expressionSemantic(sc);
             e2 = e2.ctfeInterpret();
-            e2 = new EqualExp(EXP.equal, em.loc, eprev, e2);
+            e2 = new EqualExp(EXP.equal, em.ed.loc, eprev, e2);
             e2 = e2.expressionSemantic(sc);
             e2 = e2.ctfeInterpret();
         }

@@ -123,6 +123,28 @@ private extern(C++) final class Semantic2Visitor : Visitor
         staticAssertFail(sa, sc);
     }
 
+    override void visit(EnumDeclaration ed)
+    {
+        //printf("EnumDeclaration::semantic2(%s) %s\n", sc.stc & STCfinal ? "final" : "", ed.toChars());
+        if (ed.semanticRun >= PASS.semantic2done)
+            return;
+        ed.semanticRun = PASS.semantic2;
+
+        if (!ed.members)
+            return;
+
+        // Process all enum members to compute their values
+        for (size_t i = 0; i < ed.members.length; i++)
+        {
+            EnumMember em = (*ed.members)[i].isEnumMember();
+            if (em && em.semanticRun < PASS.semanticdone)
+                em.dsymbolSemantic(em._scope);
+        }
+
+        // Now that all member values are calculated, we can mark the enum as semantic2done
+        ed.semanticRun = PASS.semantic2done;
+    }
+
     override void visit(TemplateInstance tempinst)
     {
         if (tempinst.semanticRun >= PASS.semantic2)
