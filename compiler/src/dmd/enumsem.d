@@ -542,7 +542,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         emax = emax.ctfeInterpret();
 
         // check that (eprev != emax)
-        Expression e = new EqualExp(EXP.equal, em.loc, eprev, emax);
+        Expression e = new EqualExp(EXP.equal, em.ed.loc, eprev, emax);
         e = e.expressionSemantic(sc);
         e = e.ctfeInterpret();
         if (global.endGagging(errors))

@@ -696,6 +696,41 @@ private extern(C++) final class Semantic2Visitor : Visitor
     {
         td.foreachVar((s) { s.accept(this); });
     }
+
+    override void visit(EnumDeclaration ed)
+    {
+        //printf("EnumDeclaration::semantic2(%s) semanticRun = %d\n", ed.toChars(), ed.semanticRun);
+        if (ed.semanticRun >= PASS.semantic2done)
+            return;
+        assert(ed.semanticRun <= PASS.semantic2);
+        ed.semanticRun = PASS.semantic2;
+
+        if (!ed.members)
+            return;
+
+        // Process all enum members for proper value computation
+        auto scx = ed._scope ? ed._scope : sc;
+        if (!scx)
+            return;
+            
+        scx = scx.startCTFE();
+        scx.setNoFree(); // needed for getMaxMinValue()
+
+        ed.members.foreachDsymbol( (s)
+        {
+            if (EnumMember em = s.isEnumMember())
+            {
+                if (em._scope)
+                    scx = em._scope;
+                    
+                // Make sure the enum member values are fully evaluated
+                if (em.semanticRun < PASS.semanticdone)
+                    em.dsymbolSemantic(scx);
+            }
+        });
+
+        ed.semanticRun = PASS.semantic2done;
+    }
 }
 
 /**
