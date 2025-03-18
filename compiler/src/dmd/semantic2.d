@@ -712,7 +712,7 @@ private extern(C++) final class Semantic2Visitor : Visitor
         auto scx = ed._scope ? ed._scope : sc;
         if (!scx)
             return;
-            
+
         scx = scx.startCTFE();
         scx.setNoFree(); // needed for getMaxMinValue()
 
@@ -722,7 +722,7 @@ private extern(C++) final class Semantic2Visitor : Visitor
             {
                 if (em._scope)
                     scx = em._scope;
-                    
+    
                 // Make sure the enum member values are fully evaluated
                 if (em.semanticRun < PASS.semanticdone)
                     em.dsymbolSemantic(scx);
