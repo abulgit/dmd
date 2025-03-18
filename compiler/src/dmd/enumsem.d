@@ -203,11 +203,6 @@ void enumSemantic(Scope* sc, EnumDeclaration ed)
             deprecation(ed.loc, "`scope` as a type constraint is deprecated.  Use `scope` at the usage site.");
     }
 
-    if (sc.inCfile)
-        return cEnumSemantic(sc, ed);
-
-    // Setup scopes for each member but don't evaluate them yet
-    // The actual enum member value computation will happen in semantic2
     Scope* sce;
     if (ed.isAnonymous())
         sce = sc;
@@ -219,7 +214,8 @@ void enumSemantic(Scope* sc, EnumDeclaration ed)
     sce = sce.startCTFE();
     sce.setNoFree(); // needed for getMaxMinValue()
 
-    // Each enum member gets the sce scope
+    /* Each enum member gets the sce scope
+     */
     ed.members.foreachDsymbol( (s)
     {
         if (EnumMember em = s.isEnumMember())
@@ -232,9 +228,14 @@ void enumSemantic(Scope* sc, EnumDeclaration ed)
      */
     addEnumMembersToSymtab(ed, sc, sc.getScopesym());
 
-    // For D enums, defer the member value computation to semantic2
-    // to avoid circular reference issues with final switch statements
-    ed.semanticRun = PASS.semantic;
+    if (sc.inCfile)
+        return cEnumSemantic(sc, ed);
+
+    ed.members.foreachDsymbol( (s)
+    {
+        if (EnumMember em = s.isEnumMember())
+            em.dsymbolSemantic(em._scope);
+    });
     //printf("ed.defaultval = %lld\n", ed.defaultval);
 
     //if (ed.defaultval) printf("ed.defaultval: %s %s\n", ed.defaultval.toChars(), ed.defaultval.type.toChars());
@@ -541,7 +542,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         emax = emax.ctfeInterpret();
 
         // check that (eprev != emax)
-        Expression e = new EqualExp(EXP.equal, em.ed.loc, eprev, emax);
+        Expression e = new EqualExp(EXP.equal, em.loc, eprev, emax);
         e = e.expressionSemantic(sc);
         e = e.ctfeInterpret();
         if (global.endGagging(errors))
@@ -550,6 +551,9 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
             error(em.loc, "cannot check `%s` value for overflow", em.toPrettyChars());
             // rerun to show errors
             Expression e2 = DotIdExp.create(em.ed.loc, new TypeExp(em.ed.loc, tprev), Id.max);
+            e2 = e2.expressionSemantic(sc);
+            e2 = e2.ctfeInterpret();
+            e2 = new EqualExp(EXP.equal, em.loc, eprev, e2);
             e2 = e2.expressionSemantic(sc);
             e2 = e2.ctfeInterpret();
         }
