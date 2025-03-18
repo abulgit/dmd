@@ -1959,6 +1959,16 @@ Statement statementSemanticVisit(Statement s, Scope* sc)
                 ed = ds.isEnumDeclaration(); // typedef'ed enum
             if (!ed && te && ((ds = te.toDsymbol(sc)) !is null))
                 ed = ds.isEnumDeclaration();
+
+            // We need to check semantic2 status as enum member values are fully processed in semantic2
+            if (ed && (ed.semanticRun < PASS.semanticdone || 
+                     (ed.semanticRun < PASS.semantic2done && ed.members)))
+            {
+                error(ss.loc, "cannot use `final switch` on enum `%s` while it is being defined", ed.toChars());
+                sc.pop();
+                return setError();
+            }
+
             if (ed && ss.cases.length < ed.members.length)
             {
                 int missingMembers = 0;
