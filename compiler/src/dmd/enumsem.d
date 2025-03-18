@@ -238,6 +238,10 @@ void enumSemantic(Scope* sc, EnumDeclaration ed)
     });
     //printf("ed.defaultval = %lld\n", ed.defaultval);
 
+    // For enums, semantic done means base type is determined
+    // semantic2 will compute all the member values
+    ed.semanticRun = PASS.semanticdone;
+
     //if (ed.defaultval) printf("ed.defaultval: %s %s\n", ed.defaultval.toChars(), ed.defaultval.type.toChars());
     //printf("members = %s\n", members.toChars());
 }
