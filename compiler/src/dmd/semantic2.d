@@ -696,6 +696,16 @@ private extern(C++) final class Semantic2Visitor : Visitor
     {
         td.foreachVar((s) { s.accept(this); });
     }
+
+    override void visit(EnumDeclaration ed)
+    {
+        //printf("EnumDeclaration::semantic2(%s)\n", ed.toChars());
+        if (ed.semanticRun >= PASS.semantic2done)
+            return;
+        
+        import dmd.enumsem : enumSemantic2;
+        enumSemantic2(sc, ed);
+    }
 }
 
 /**

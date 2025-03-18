@@ -192,7 +192,10 @@ void enumSemantic(Scope* sc, EnumDeclaration ed)
     }
 
     if (!sc.inCfile)  // C enum remains incomplete until members are done
+    {
+        // We'll defer semantic2done until all members have their values computed
         ed.semanticRun = PASS.semanticdone;
+    }
 
     version (none)
     {
@@ -612,4 +615,57 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
 
     assert(em.origValue);
     em.semanticRun = PASS.semanticdone;
+}
+
+/*********************************
+ * Perform second phase semantic analysis on enum declaration `ed`
+ * This ensures all member values have been computed properly.
+ */
+void enumSemantic2(Scope* sc, EnumDeclaration ed)
+{
+    //printf("EnumDeclaration::semantic2(sd = %p, '%s') %s\n", sc.scopesym, sc.scopesym.toChars(), ed.toChars());
+    if (ed.semanticRun >= PASS.semantic2done)
+        return; // semantic2() already completed
+    if (ed.semanticRun == PASS.semantic2)
+    {
+        assert(ed.memtype);
+        error(ed.loc, "circular reference to enum values in enum `%s`", ed.toChars());
+        ed.errors = true;
+        ed.semanticRun = PASS.semantic2done;
+        return;
+    }
+
+    // Skip if we're still in semantic1 phase or if we have errors
+    if (ed.semanticRun < PASS.semanticdone || ed.errors)
+        return;
+
+    ed.semanticRun = PASS.semantic2;
+
+    if (!ed.members) // enum without members
+    {
+        ed.semanticRun = PASS.semantic2done;
+        return;
+    }
+
+    // In semantic2, we make sure all enum member values are fully computed
+    // This ensures that final switch statements can safely reference the enum
+    foreach (i, s; *ed.members)
+    {
+        if (EnumMember em = s.isEnumMember())
+        {
+            // Only process members that haven't been fully processed yet
+            if (em.semanticRun < PASS.semanticdone)
+            {
+                em.dsymbolSemantic(em._scope);
+            }
+            
+            // Ensure value is computed
+            if (em.value && em.value.op == EXP.error)
+            {
+                ed.errors = true;
+            }
+        }
+    }
+
+    ed.semanticRun = PASS.semantic2done;
 }

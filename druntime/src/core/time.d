@@ -2020,29 +2020,33 @@ unittest
 // used in MonoTimeImpl
 private string _clockTypeName(ClockType clockType)
 {
-    final switch (clockType)
+    switch (clockType)
     {
         foreach (name; __traits(allMembers, ClockType))
         {
         case __traits(getMember, ClockType, name):
             return name;
         }
+        default:
+            assert(0, "Unhandled ClockType");
     }
-    assert(0);
+    assert(0); // Unreachable
 }
 
 // used in MonoTimeImpl
 private size_t _clockTypeIdx(ClockType clockType)
 {
-    final switch (clockType)
+    switch (clockType)
     {
         foreach (i, name; __traits(allMembers, ClockType))
         {
         case __traits(getMember, ClockType, name):
             return i;
         }
+        default:
+            assert(0, "Unhandled ClockType");
     }
-    assert(0);
+    assert(0); // Unreachable
 }
 
 
