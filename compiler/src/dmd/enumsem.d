@@ -525,6 +525,15 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         if (emprev.errors)
             return errorReturn();
 
+        // Check if the base type is an enum type - if so, we cannot automatically increment
+        // This addresses GitHub issue #18262 - Bad diagnostic for an enum member in an enum that use another enum as base type
+        if (em.ed.memtype && em.ed.memtype.ty == Tenum)
+        {
+            .error(em.loc, "%s `%s` value cannot be automatically set because the base type `%s` does not support increment",
+                em.kind, em.toPrettyChars, em.ed.memtype.toChars());
+            return errorReturn();
+        }
+
         auto errors = global.startGagging();
         Expression eprev = emprev.value;
         assert(eprev);
@@ -542,7 +551,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         emax = emax.ctfeInterpret();
 
         // check that (eprev != emax)
-        Expression e = new EqualExp(EXP.equal, em.loc, eprev, emax);
+        Expression e = new EqualExp(EXP.equal, em.ed.loc, eprev, emax);
         e = e.expressionSemantic(sc);
         e = e.ctfeInterpret();
         if (global.endGagging(errors))
@@ -553,7 +562,7 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
             Expression e2 = DotIdExp.create(em.ed.loc, new TypeExp(em.ed.loc, tprev), Id.max);
             e2 = e2.expressionSemantic(sc);
             e2 = e2.ctfeInterpret();
-            e2 = new EqualExp(EXP.equal, em.loc, eprev, e2);
+            e2 = new EqualExp(EXP.equal, em.ed.loc, eprev, e2);
             e2 = e2.expressionSemantic(sc);
             e2 = e2.ctfeInterpret();
         }
