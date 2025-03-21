@@ -554,10 +554,11 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
             // display an introductory error before showing what actually failed
             error(em.loc, "cannot check `%s` value for overflow", em.toPrettyChars());
 
-            // Check if using one enum as a base type for another enum
+            // Check if using one enum as a base type for another enum where we're incrementing within the same enum
             TypeEnum typenum = em.ed.memtype ? em.ed.memtype.isTypeEnum() : null;
-            if (typenum)
+            if (typenum && emprev && emprev.ed == em.ed)
             {
+                // This handles the case when an enum uses another enum as its base type
                 error(em.loc, "cannot auto-increment value for enum member `%s.%s` because base type `%s` does not support increment",
                     em.ed.toChars(), em.toChars(), typenum.sym.toChars());
                 error(em.loc, "enum member with enum base type must have an explicit initializer");

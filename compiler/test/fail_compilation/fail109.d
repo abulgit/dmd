@@ -35,8 +35,8 @@ enum E1 : short
 TEST_OUTPUT:
 ---
 fail_compilation/fail109.d(50): Error: cannot check `fail109.B.end` value for overflow
-fail_compilation/fail109.d(50): Error: comparison between different enumeration types `B` and `C`; If this behavior is intended consider using `std.conv.asOriginalType`
-fail_compilation/fail109.d(50): Error: enum member `fail109.B.end` initialization with `B.start+1` causes overflow for type `C`
+fail_compilation/fail109.d(50): Error: cannot auto-increment value for enum member `B.end` because base type `C` does not support increment
+fail_compilation/fail109.d(50): Error: enum member with enum base type must have an explicit initializer
 ---
 */
 enum C
