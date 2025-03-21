@@ -553,6 +553,17 @@ void enumMemberSemantic(Scope* sc, EnumMember em)
         {
             // display an introductory error before showing what actually failed
             error(em.loc, "cannot check `%s` value for overflow", em.toPrettyChars());
+
+            // Check if using one enum as a base type for another enum
+            TypeEnum typenum = em.ed.memtype ? em.ed.memtype.isTypeEnum() : null;
+            if (typenum)
+            {
+                error(em.loc, "cannot auto-increment value for enum member `%s.%s` because base type `%s` does not support increment",
+                    em.ed.toChars(), em.toChars(), typenum.sym.toChars());
+                error(em.loc, "enum member with enum base type must have an explicit initializer");
+                return errorReturn();
+            }
+
             // rerun to show errors
             Expression e2 = DotIdExp.create(em.ed.loc, new TypeExp(em.ed.loc, tprev), Id.max);
             e2 = e2.expressionSemantic(sc);
