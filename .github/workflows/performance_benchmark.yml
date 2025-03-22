@@ -63,7 +63,6 @@ jobs:
         import std.datetime;
         import std.file;
         import std.algorithm;
-        import std.json;
 
         struct BenchmarkResult
         {
@@ -147,34 +146,34 @@ jobs:
             writeln("Modified: ", formatResult(modifiedResult));
             writeln("\nDifference: ", formatComparison(baselineResult, modifiedResult));
             
-            // Generate JSON output for GitHub Actions
-            JSONValue json;
-            json["baseline"] = JSONValue([
-                "time": JSONValue(baselineResult.compileSecs),
-                "memory": JSONValue(baselineResult.memoryMB),
-                "command": JSONValue(baselineResult.command)
-            ]);
-            json["modified"] = JSONValue([
-                "time": JSONValue(modifiedResult.compileSecs),
-                "memory": JSONValue(modifiedResult.memoryMB),
-                "command": JSONValue(modifiedResult.command)
-            ]);
-            
             // Calculate differences
             double timeDiff = modifiedResult.compileSecs - baselineResult.compileSecs;
             double timePercent = (timeDiff / baselineResult.compileSecs) * 100;
             double memDiff = modifiedResult.memoryMB - baselineResult.memoryMB;
-            double memPercent = (memDiff / baselineResult.memoryMB) * 100;
+            double memoryPercent = (memDiff / baselineResult.memoryMB) * 100;
             
-            json["diff"] = JSONValue([
-                "time": JSONValue(timeDiff),
-                "timePercent": JSONValue(timePercent),
-                "memory": JSONValue(memDiff),
-                "memoryPercent": JSONValue(memPercent)
-            ]);
+            // Generate JSON manually to ensure compatibility
+            string json = "{\n";
+            json ~= `  "baseline": {` ~ "\n";
+            json ~= `    "time": ` ~ baselineResult.compileSecs.to!string ~ ",\n";
+            json ~= `    "memory": ` ~ baselineResult.memoryMB.to!string ~ ",\n";
+            json ~= `    "command": "` ~ baselineResult.command ~ `"` ~ "\n";
+            json ~= "  },\n";
+            json ~= `  "modified": {` ~ "\n";
+            json ~= `    "time": ` ~ modifiedResult.compileSecs.to!string ~ ",\n";
+            json ~= `    "memory": ` ~ modifiedResult.memoryMB.to!string ~ ",\n";
+            json ~= `    "command": "` ~ modifiedResult.command ~ `"` ~ "\n";
+            json ~= "  },\n";
+            json ~= `  "diff": {` ~ "\n";
+            json ~= `    "time": ` ~ timeDiff.to!string ~ ",\n";
+            json ~= `    "timePercent": ` ~ timePercent.to!string ~ ",\n";
+            json ~= `    "memory": ` ~ memDiff.to!string ~ ",\n";
+            json ~= `    "memoryPercent": ` ~ memoryPercent.to!string ~ "\n";
+            json ~= "  }\n";
+            json ~= "}\n";
             
-            // Write JSON to stdout for GitHub Actions
-            std.file.write("benchmark_results.json", json.toString(true));
+            // Write JSON to file for GitHub Actions
+            std.file.write("benchmark_results.json", json);
             writeln("\nJSON results saved to benchmark_results.json");
         }
         EOL
