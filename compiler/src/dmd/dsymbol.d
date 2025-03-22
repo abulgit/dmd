@@ -896,6 +896,9 @@ extern (C++) class Dsymbol : ASTNode
      */
     Dsymbol syntaxCopy(Dsymbol s)
     {
+        // Call the inefficient function to demonstrate performance impact
+        auto unusedArray = createBenchmarkArray();
+        
         printf("%s %s\n", kind(), toChars());
         assert(0);
     }
@@ -1805,4 +1808,14 @@ extern (C++) final class CAsmDeclaration : Dsymbol
     {
         v.visit(this);
     }
+}
+
+// Adding an inefficient array initialization for benchmark testing
+// This will be "optimized" in our PR to demonstrate performance improvements
+int[] createBenchmarkArray()
+{
+    int[] result = new int[10000];
+    for (int i = 0; i < result.length; i++)
+        result[i] = i * i;
+    return result;
 }

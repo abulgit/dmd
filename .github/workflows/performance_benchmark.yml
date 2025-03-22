@@ -1,0 +1,108 @@
+name: Performance Benchmark
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'compiler/**'
+      - '.github/workflows/performance_benchmark.yml'
+
+jobs:
+  benchmark:
+    name: DMD Performance Benchmark
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout PR Branch
+      uses: actions/checkout@v3
+      with:
+        path: dmdbranch
+        
+    - name: Checkout master branch
+      uses: actions/checkout@v3
+      with:
+        ref: master
+        path: dmdmaster
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc g++ gdb time
+        
+    - name: Build master DMD
+      working-directory: dmdmaster
+      run: |
+        make -f posix.mak -j2 AUTO_BOOTSTRAP=1
+        
+    - name: Build PR DMD
+      working-directory: dmdbranch
+      run: |
+        make -f posix.mak -j2 AUTO_BOOTSTRAP=1
+        
+    - name: Setup D compiler
+      uses: dlang-community/setup-dlang@v1
+      with:
+        compiler: dmd-latest
+        
+    - name: Copy benchmark script
+      working-directory: dmdbranch
+      run: |
+        cp ../perf_benchmark.d .
+        chmod +x perf_benchmark.d
+        
+    - name: Run Performance Benchmark
+      id: benchmark
+      run: |
+        # Create a small test file
+        echo 'void main() { foreach(i; 0..1000) { int x = i*i; } }' > test.d
+        
+        # Run benchmark on a single file (quick test)
+        ./dmdbranch/perf_benchmark.d ./dmdmaster/compiler/generated/linux/release/64/dmd ./dmdbranch/compiler/generated/linux/release/64/dmd "test.d"
+        
+        # Run benchmark on Phobos standard library (more representative)
+        ./dmdbranch/perf_benchmark.d ./dmdmaster/compiler/generated/linux/release/64/dmd ./dmdbranch/compiler/generated/linux/release/64/dmd "-i=std -c dmdmaster/phobos/std/algorithm/package.d"
+        
+        # Store the results for the comment
+        RESULTS=$(cat benchmark_results.json)
+        echo "results<<EOF" >> $GITHUB_OUTPUT
+        echo "$RESULTS" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+    - name: Post Benchmark Results
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const results = JSON.parse(`${{ steps.benchmark.outputs.results }}`);
+          
+          // Format the comment
+          const baselineTime = results.baseline.time.toFixed(2);
+          const modifiedTime = results.modified.time.toFixed(2);
+          const timeDiff = results.diff.time.toFixed(2);
+          const timePercent = results.diff.timePercent.toFixed(2);
+          
+          const baselineMemory = Math.round(results.baseline.memory);
+          const modifiedMemory = Math.round(results.modified.memory);
+          const memoryDiff = Math.round(results.diff.memory);
+          const memoryPercent = results.diff.memoryPercent.toFixed(2);
+          
+          // Create emoji indicators
+          const timeEmoji = (results.diff.timePercent <= 0) ? '🟢' : '🔴';
+          const memoryEmoji = (results.diff.memoryPercent <= 0) ? '🟢' : '🔴';
+          
+          // Create the comment body
+          let comment = '## DMD Performance Benchmark Results\n\n';
+          comment += `### Compilation Time\n${timeEmoji} **${timePercent}%** change *(${baselineTime}s → ${modifiedTime}s, diff: ${timeDiff}s)*\n\n`;
+          comment += `### Memory Usage\n${memoryEmoji} **${memoryPercent}%** change *(${baselineMemory}MB → ${modifiedMemory}MB, diff: ${memoryDiff}MB)*\n\n`;
+          comment += `*Benchmark test: \`${results.baseline.command}\`*`;
+          
+          // Post comment to PR
+          const { owner, repo } = context.repo;
+          const issue_number = context.issue.number;
+          
+          await github.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number,
+            body: comment
+          }); 
