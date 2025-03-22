@@ -29,6 +29,10 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y gcc g++ gdb time
         
+        # Install Hyperfine for better benchmarking
+        wget https://github.com/sharkdp/hyperfine/releases/download/v1.16.1/hyperfine_1.16.1_amd64.deb
+        sudo dpkg -i hyperfine_1.16.1_amd64.deb
+        
     - name: Setup D compiler
       uses: dlang-community/setup-dlang@v1
       with:
@@ -52,7 +56,8 @@ jobs:
         /**
          * Performance Regression Benchmark for DMD
          * 
-         * This script runs benchmarks on DMD to measure compilation performance metrics.
+         * This script runs benchmarks on DMD to measure compilation performance metrics
+         * using Hyperfine for statistical accuracy.
          * It compares a baseline DMD (typically master) with a modified DMD.
          */
         import std.stdio;
@@ -64,12 +69,16 @@ jobs:
         import std.file;
         import std.algorithm;
         import std.math;
+        import std.json;
 
         struct BenchmarkResult
         {
             double compileSecs;
             size_t memoryMB;
             string command;
+            double stdDev;    // Standard deviation for multiple runs
+            double min;       // Minimum time across runs
+            double max;       // Maximum time across runs
         }
 
         BenchmarkResult runBenchmark(string dmdPath, string testCase)
@@ -79,18 +88,42 @@ jobs:
             // Capture the command for reference
             result.command = dmdPath ~ " " ~ testCase;
             
-            // Run the actual benchmark with time command to capture resource usage
-            auto timeCmd = "time -v " ~ dmdPath ~ " " ~ testCase ~ " 2>&1";
-            writeln("Running: ", timeCmd);
+            // Hyperfine benchmarks with 3 warmup runs and 5 timed runs
+            // The --export-json option captures all measurements
+            string jsonFile = (dmdPath.canFind("master") ? "baseline" : "modified") ~ "_results.json";
+            auto hyperfineCmd = "hyperfine --warmup 3 --runs 5 --export-json " ~ jsonFile 
+                              ~ " --command-name " ~ (dmdPath.canFind("master") ? "baseline" : "modified")
+                              ~ " '" ~ dmdPath ~ " " ~ testCase ~ "'";
             
+            writeln("Running: ", hyperfineCmd);
+            executeShell(hyperfineCmd);
+            
+            // Parse the hyperfine JSON output
+            if (std.file.exists(jsonFile))
+            {
+                string jsonContent = std.file.readText(jsonFile);
+                JSONValue json = parseJSON(jsonContent);
+                
+                // Extract mean time
+                result.compileSecs = json["results"][0]["mean"].floating;
+                
+                // Extract standard deviation
+                result.stdDev = json["results"][0]["stddev"].floating;
+                
+                // Extract min/max times
+                result.min = json["results"][0]["min"].floating;
+                result.max = json["results"][0]["max"].floating;
+            }
+            
+            // Also capture memory usage with time command
+            // Since hyperfine doesn't track memory usage
+            auto timeCmd = "time -v " ~ dmdPath ~ " " ~ testCase ~ " 2>&1";
             auto output = executeShell(timeCmd).output.splitLines();
             
-            // Parse the output to extract metrics
+            // Extract memory usage from time output
             foreach (line; output)
             {
-                if (line.canFind("User time (seconds):"))
-                    result.compileSecs = line.split(":")[1].strip().to!double;
-                else if (line.canFind("Maximum resident set size (kbytes):"))
+                if (line.canFind("Maximum resident set size (kbytes):"))
                     result.memoryMB = line.split(":")[1].strip().to!size_t / 1024;
             }
             
@@ -99,8 +132,8 @@ jobs:
 
         string formatResult(BenchmarkResult result)
         {
-            return format("Compile time: %.2f seconds | Memory usage: %d MB", 
-                        result.compileSecs, result.memoryMB);
+            return format("Compile time: %.3f seconds (±%.3f) | Min: %.3f s | Max: %.3f s | Memory: %d MB", 
+                        result.compileSecs, result.stdDev, result.min, result.max, result.memoryMB);
         }
 
         string formatComparison(BenchmarkResult baseline, BenchmarkResult modified)
@@ -111,7 +144,7 @@ jobs:
             double memDiff = modified.memoryMB - baseline.memoryMB;
             double memPercent = baseline.memoryMB > 0 ? (memDiff / baseline.memoryMB) * 100 : 0;
             
-            return format("Time: %+.2f seconds (%+.2f%%) | Memory: %+d MB (%+.2f%%)",
+            return format("Time: %+.3f seconds (%+.2f%%) | Memory: %+d MB (%+.2f%%)",
                         timeDiff, timePercent, cast(int)memDiff, memPercent);
         }
 
@@ -166,12 +199,18 @@ jobs:
             json ~= `  "baseline": {` ~ "\n";
             json ~= `    "time": ` ~ baselineResult.compileSecs.to!string ~ ",\n";
             json ~= `    "memory": ` ~ baselineResult.memoryMB.to!string ~ ",\n";
-            json ~= `    "command": "` ~ baselineResult.command ~ `"` ~ "\n";
+            json ~= `    "command": "` ~ baselineResult.command ~ `",` ~ "\n";
+            json ~= `    "stddev": ` ~ baselineResult.stdDev.to!string ~ ",\n";
+            json ~= `    "min": ` ~ baselineResult.min.to!string ~ ",\n";
+            json ~= `    "max": ` ~ baselineResult.max.to!string ~ "\n";
             json ~= "  },\n";
             json ~= `  "modified": {` ~ "\n";
             json ~= `    "time": ` ~ modifiedResult.compileSecs.to!string ~ ",\n";
             json ~= `    "memory": ` ~ modifiedResult.memoryMB.to!string ~ ",\n";
-            json ~= `    "command": "` ~ modifiedResult.command ~ `"` ~ "\n";
+            json ~= `    "command": "` ~ modifiedResult.command ~ `",` ~ "\n";
+            json ~= `    "stddev": ` ~ modifiedResult.stdDev.to!string ~ ",\n";
+            json ~= `    "min": ` ~ modifiedResult.min.to!string ~ ",\n";
+            json ~= `    "max": ` ~ modifiedResult.max.to!string ~ "\n";
             json ~= "  },\n";
             json ~= `  "diff": {` ~ "\n";
             json ~= `    "time": ` ~ timeDiff.to!string ~ ",\n";
@@ -312,25 +351,48 @@ jobs:
           const results = JSON.parse(`${{ steps.benchmark.outputs.results }}`);
           
           // Format the comment
-          const baselineTime = results.baseline.time.toFixed(2);
-          const modifiedTime = results.modified.time.toFixed(2);
-          const timeDiff = results.diff.time.toFixed(2);
-          const timePercent = results.diff.timePercent.toFixed(2);
+          const baselineTime = parseFloat(results.baseline.time).toFixed(3);
+          const modifiedTime = parseFloat(results.modified.time).toFixed(3);
+          const timeDiff = parseFloat(results.diff.time).toFixed(3);
+          const timePercent = parseFloat(results.diff.timePercent).toFixed(2);
           
           const baselineMemory = Math.round(results.baseline.memory);
           const modifiedMemory = Math.round(results.modified.memory);
           const memoryDiff = Math.round(results.diff.memory);
-          const memoryPercent = results.diff.memoryPercent.toFixed(2);
+          const memoryPercent = parseFloat(results.diff.memoryPercent).toFixed(2);
+          
+          // Standard deviation for statistical significance
+          const baselineStdDev = parseFloat(results.baseline.stddev).toFixed(3);
+          const modifiedStdDev = parseFloat(results.modified.stddev).toFixed(3);
+          
+          // Min/Max values for ranges
+          const baselineMin = parseFloat(results.baseline.min).toFixed(3);
+          const baselineMax = parseFloat(results.baseline.max).toFixed(3);
+          const modifiedMin = parseFloat(results.modified.min).toFixed(3);
+          const modifiedMax = parseFloat(results.modified.max).toFixed(3);
           
           // Create emoji indicators
           const timeEmoji = (results.diff.timePercent <= 0) ? '🟢' : '🔴';
           const memoryEmoji = (results.diff.memoryPercent <= 0) ? '🟢' : '🔴';
           
+          // Determine if the difference is statistically significant
+          // Using a simple overlap test: if the ranges (mean±stddev) don't overlap, it's significant
+          const baselineUpper = parseFloat(results.baseline.time) + parseFloat(results.baseline.stddev);
+          const baselineLower = parseFloat(results.baseline.time) - parseFloat(results.baseline.stddev);
+          const modifiedUpper = parseFloat(results.modified.time) + parseFloat(results.modified.stddev);
+          const modifiedLower = parseFloat(results.modified.time) - parseFloat(results.modified.stddev);
+          
+          const isSignificant = (baselineUpper < modifiedLower) || (modifiedUpper < baselineLower);
+          const significanceIndicator = isSignificant ? '**Statistically Significant**' : 'Not statistically significant';
+          
           // Create the comment body
           let comment = '## DMD Performance Benchmark Results\n\n';
-          comment += `### Compilation Time\n${timeEmoji} **${timePercent}%** change *(${baselineTime}s → ${modifiedTime}s, diff: ${timeDiff}s)*\n\n`;
+          comment += `### Compilation Time\n${timeEmoji} **${timePercent}%** change *(${baselineTime}s → ${modifiedTime}s, diff: ${timeDiff}s)* - ${significanceIndicator}\n\n`;
+          comment += `**Baseline:** ${baselineTime}s ±${baselineStdDev}s (range: ${baselineMin}s - ${baselineMax}s)\n`;
+          comment += `**Modified:** ${modifiedTime}s ±${modifiedStdDev}s (range: ${modifiedMin}s - ${modifiedMax}s)\n\n`;
           comment += `### Memory Usage\n${memoryEmoji} **${memoryPercent}%** change *(${baselineMemory}MB → ${modifiedMemory}MB, diff: ${memoryDiff}MB)*\n\n`;
-          comment += `*Benchmark test: \`${results.baseline.command}\`*`;
+          comment += `*Benchmark test: \`${results.baseline.command}\`*\n\n`;
+          comment += `*Benchmarked with [Hyperfine](https://github.com/sharkdp/hyperfine): 3 warmup runs, 5 measured runs*`;
           
           // Post comment to PR
           const { owner, repo } = context.repo;
