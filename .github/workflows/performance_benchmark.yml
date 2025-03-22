@@ -188,17 +188,115 @@ jobs:
         EOL
         chmod +x perf_benchmark.d
         
+    - name: Create Complex Test Case
+      run: |
+        # Create a complex test file that heavily uses deprecated features
+        cat > complex_test.d << 'EOL'
+        module complex_test;
+        
+        import std.stdio;
+        import std.conv;
+        import std.array;
+        
+        // Create many deprecated symbols to trigger the checkDeprecated method
+        deprecated("Use newFunction1 instead") void oldFunction1() { }
+        deprecated("Use newFunction2 instead") void oldFunction2() { }
+        deprecated("Use newFunction3 instead") void oldFunction3() { }
+        deprecated("Use newFunction4 instead") void oldFunction4() { }
+        deprecated("Use newFunction5 instead") void oldFunction5() { }
+        deprecated("Use newFunction6 instead") void oldFunction6() { }
+        deprecated("Use newFunction7 instead") void oldFunction7() { }
+        deprecated("Use newFunction8 instead") void oldFunction8() { }
+        deprecated("Use newFunction9 instead") void oldFunction9() { }
+        deprecated("Use newFunction10 instead") void oldFunction10() { }
+        
+        // Create a complex class hierarchy with deprecated methods
+        class BaseClass {
+            deprecated("Use newMethod instead") void oldMethod() { }
+        }
+        
+        class DerivedClass1 : BaseClass {
+            deprecated override void oldMethod() { }
+        }
+        
+        class DerivedClass2 : DerivedClass1 {
+            deprecated override void oldMethod() { }
+        }
+        
+        // Create a deprecated struct with many fields
+        deprecated struct OldStruct {
+            int field1, field2, field3, field4, field5;
+            string name;
+            double value;
+            
+            deprecated this(int f1, int f2, int f3, int f4, int f5) {
+                field1 = f1;
+                field2 = f2;
+                field3 = f3;
+                field4 = f4;
+                field5 = f5;
+            }
+            
+            deprecated void calculate() {
+                // Some complex calculations
+                for (int i = 0; i < 100; i++) {
+                    value += (field1 * field2) / (field3 + field4 - field5);
+                }
+            }
+        }
+        
+        // Create a complex function that uses all these deprecated elements
+        void complexFunction() {
+            // Call all deprecated functions
+            oldFunction1();
+            oldFunction2();
+            oldFunction3();
+            oldFunction4();
+            oldFunction5();
+            oldFunction6();
+            oldFunction7();
+            oldFunction8();
+            oldFunction9();
+            oldFunction10();
+            
+            // Create and use deprecated class hierarchy
+            auto base = new BaseClass();
+            base.oldMethod();
+            
+            auto derived1 = new DerivedClass1();
+            derived1.oldMethod();
+            
+            auto derived2 = new DerivedClass2();
+            derived2.oldMethod();
+            
+            // Create and use deprecated struct
+            OldStruct s = OldStruct(1, 2, 3, 4, 5);
+            s.name = "test";
+            s.calculate();
+        }
+        
+        // Main function with a loop to make it process-intensive
+        void main() {
+            for (int i = 0; i < 5; i++) {
+                complexFunction();
+            }
+        }
+        EOL
+        
     - name: Run Performance Benchmark
       id: benchmark
       run: |
         # Create a small test file
         echo 'void main() { foreach(i; 0..1000) { int x = i*i; } }' > test.d
         
-        # Run benchmark on a single file (quick test)
-        ./dmdbranch/perf_benchmark.d ./dmdmaster/compiler/generated/linux/release/64/dmd ./dmdbranch/compiler/generated/linux/release/64/dmd "test.d"
+        # Run benchmark on our complex test case (should trigger inefficiencies)
+        echo "Running benchmark on complex test with plenty of deprecated symbols..."
+        ./dmdbranch/perf_benchmark.d ./dmdmaster/compiler/generated/linux/release/64/dmd ./dmdbranch/compiler/generated/linux/release/64/dmd "complex_test.d -vcolumns"
         
-        # Run benchmark on Phobos standard library (more representative)
-        ./dmdbranch/perf_benchmark.d ./dmdmaster/compiler/generated/linux/release/64/dmd ./dmdbranch/compiler/generated/linux/release/64/dmd "-i=std -c dmdmaster/phobos/std/algorithm/package.d"
+        # Show compilation output for debugging
+        echo "Testing if both compilers can compile the test case correctly..."
+        ./dmdmaster/compiler/generated/linux/release/64/dmd complex_test.d -vcolumns || true
+        ./dmdbranch/compiler/generated/linux/release/64/dmd complex_test.d -vcolumns || true
         
         # Store the results for the comment
         RESULTS=$(cat benchmark_results.json)
