@@ -63,6 +63,7 @@ jobs:
         import std.datetime;
         import std.file;
         import std.algorithm;
+        import std.math;
 
         struct BenchmarkResult
         {
@@ -105,13 +106,21 @@ jobs:
         string formatComparison(BenchmarkResult baseline, BenchmarkResult modified)
         {
             double timeDiff = modified.compileSecs - baseline.compileSecs;
-            double timePercent = (timeDiff / baseline.compileSecs) * 100;
+            double timePercent = baseline.compileSecs > 0 ? (timeDiff / baseline.compileSecs) * 100 : 0;
             
             double memDiff = modified.memoryMB - baseline.memoryMB;
-            double memPercent = (memDiff / baseline.memoryMB) * 100;
+            double memPercent = baseline.memoryMB > 0 ? (memDiff / baseline.memoryMB) * 100 : 0;
             
             return format("Time: %+.2f seconds (%+.2f%%) | Memory: %+d MB (%+.2f%%)",
                         timeDiff, timePercent, cast(int)memDiff, memPercent);
+        }
+
+        // Safe percentage calculation that avoids division by zero
+        double safePercentage(double diff, double baseline)
+        {
+            if (baseline == 0 || isNaN(baseline))
+                return 0.0;
+            return (diff / baseline) * 100;
         }
 
         void main(string[] args)
@@ -148,9 +157,9 @@ jobs:
             
             // Calculate differences
             double timeDiff = modifiedResult.compileSecs - baselineResult.compileSecs;
-            double timePercent = (timeDiff / baselineResult.compileSecs) * 100;
+            double timePercent = safePercentage(timeDiff, baselineResult.compileSecs);
             double memDiff = modifiedResult.memoryMB - baselineResult.memoryMB;
-            double memoryPercent = (memDiff / baselineResult.memoryMB) * 100;
+            double memoryPercent = safePercentage(memDiff, baselineResult.memoryMB);
             
             // Generate JSON manually to ensure compatibility
             string json = "{\n";
