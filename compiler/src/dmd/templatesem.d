@@ -973,6 +973,12 @@ extern (D) MATCHpair deduceFunctionTemplateMatch(TemplateDeclaration td, Templat
             }
             if (fname && !foundName)
             {
+                // Issue an error message for non-existent parameter names
+                // similar to what is done for regular functions in mtype.d
+                if (instLoc.isValid())
+                {
+                    .error(instLoc, "no parameter named `%s`", fname.toChars());
+                }
                 argi = DEFAULT_ARGI;
             }
 
