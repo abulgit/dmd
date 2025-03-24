@@ -973,6 +973,10 @@ extern (D) MATCHpair deduceFunctionTemplateMatch(TemplateDeclaration td, Templat
             }
             if (fname && !foundName)
             {
+                // This is where we need to handle the error case when a named argument
+                // doesn't match any parameter name in a templated function
+                // Similar to the error generated in mtype.d's resolveNamedArgs
+                error(instLoc, "no parameter named `%s`", fname.toChars());
                 argi = DEFAULT_ARGI;
             }
 
