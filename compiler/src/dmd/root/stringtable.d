@@ -17,6 +17,26 @@ import dmd.root.rmem, dmd.root.hash;
 private enum POOL_BITS = 12;
 private enum POOL_SIZE = (1U << POOL_BITS);
 
+// Table of prime numbers to use for table sizes
+// Using prime numbers reduces clustering in hash tables
+private immutable size_t[] primeNumbers = [
+    53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157, 98317,
+    196613, 393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843,
+    50331653, 100663319, 201326611, 402653189, 805306457, 1610612741
+];
+
+// Find the next prime number larger than val
+private size_t nextPrime(size_t val) @nogc nothrow pure @safe
+{
+    foreach (prime; primeNumbers)
+        if (prime > val)
+            return prime;
+
+    // If we need something even larger, just use power of 2
+    // (though this is unlikely in normal compilation scenarios)
+    return nextpow2(val);
+}
+
 /*
 Returns the smallest integer power of 2 larger than val.
 if val > 2^^63 on 64-bit targets or val > 2^^31 on 32-bit targets it enters an
@@ -38,8 +58,11 @@ unittest
     // note: nextpow2((1UL << 63) + 1) results in an endless loop
 }
 
-private enum loadFactorNumerator = 8;
-private enum loadFactorDenominator = 10;        // for a load factor of 0.8
+// Optimized load factors for better performance
+// Initial lower load factor for better initial performance, then higher load factor for space efficiency
+private enum initialLoadFactorNumerator = 6;   // 0.6 initial load factor
+private enum normalLoadFactorNumerator = 7;    // 0.7 normal load factor
+private enum loadFactorDenominator = 10;
 
 private struct StringEntry
 {
@@ -90,18 +113,20 @@ private:
     size_t nfill;
     size_t count;
     size_t countTrigger;   // amount which will trigger growing the table
+    bool isInitialSize;    // Is this the initial table size
 
 public:
     void _init(size_t size = 0) nothrow pure
     {
-        size = nextpow2((size * loadFactorDenominator) / loadFactorNumerator);
-        if (size < 32)
-            size = 32;
+        // Start with a prime size for better hash distribution
+        size = size ? nextPrime((size * loadFactorDenominator) / initialLoadFactorNumerator) : 53;
+
         table = (cast(StringEntry*)mem.xcalloc(size, (table[0]).sizeof))[0 .. size];
-        countTrigger = (table.length * loadFactorNumerator) / loadFactorDenominator;
+        countTrigger = (table.length * initialLoadFactorNumerator) / loadFactorDenominator;
         pools = null;
         nfill = 0;
         count = 0;
+        isInitialSize = true;
     }
 
     void reset(size_t size = 0) nothrow pure
@@ -131,7 +156,6 @@ public:
     {
         const(size_t) hash = calcHash(str);
         const(size_t) i = findSlot(hash, str);
-        // printf("lookup %.*s %p\n", cast(int)str.length, str.ptr, table[i].value ?: null);
         return getValue(table[i].vptr);
     }
 
@@ -168,7 +192,6 @@ public:
         }
         table[i].hash = hash;
         table[i].vptr = allocValue(str, value);
-        // printf("insert %.*s %p\n", cast(int)str.length, str.ptr, table[i].value ?: NULL);
         return getValue(table[i].vptr);
     }
 
@@ -192,7 +215,6 @@ public:
             table[i].hash = hash;
             table[i].vptr = allocValue(str, T.init);
         }
-        // printf("update %.*s %p\n", cast(int)str.length, str.ptr, table[i].value ?: NULL);
         return getValue(table[i].vptr);
     }
 
@@ -281,17 +303,47 @@ private:
         return cast(inout(StringValue!T)*)&pools[idx][off];
     }
 
-    size_t findSlot(hash_t hash, scope const(char)[] str) const @nogc nothrow pure
+    // FNV-1a hash function - much better distribution for string data
+    private uint calcHash(scope const(char)[] str) const @nogc nothrow pure
     {
-        // quadratic probing using triangular numbers
-        // https://stackoverflow.com/questions/2348187/moving-from-linear-probing-to-quadratic-probing-hash-collisons/2349774#2349774
-        for (size_t i = hash & (table.length - 1), j = 1;; ++j)
+        enum uint FNV_prime = 0x01000193;
+        enum uint FNV_offset_basis = 0x811c9dc5;
+
+        uint hash = FNV_offset_basis;
+
+        foreach (char c; str)
+        {
+            hash ^= c;
+            hash *= FNV_prime;
+        }
+
+        return hash;
+    }
+
+    size_t findSlot(uint hash, scope const(char)[] str) const @nogc nothrow pure
+    {
+        // Linear probing - more cache friendly than quadratic probing
+        // for short probe sequences (which should be the common case with a good hash function)
+        const size_t mask = table.length - 1;
+        size_t i = hash % table.length;  // Use modulo for prime sized tables
+        size_t step = 1;
+
+        while (true)
         {
             const(StringValue!T)* sv;
             auto vptr = table[i].vptr;
-            if (!vptr || table[i].hash == hash && (sv = getValue(vptr)).length == str.length && .memcmp(str.ptr, sv.toDchars(), str.length) == 0)
+
+            if (!vptr)
                 return i;
-            i = (i + j) & (table.length - 1);
+
+            if (table[i].hash == hash)
+            {
+                sv = getValue(vptr);
+                if (sv.length == str.length && .memcmp(str.ptr, sv.toDchars(), str.length) == 0)
+                    return i;
+            }
+
+            i = (i + step) % table.length;
         }
     }
 
@@ -299,9 +351,17 @@ private:
     {
         const odim = table.length;
         auto otab = table;
-        const ndim = table.length * 2;
-        countTrigger = (ndim * loadFactorNumerator) / loadFactorDenominator;
+
+        // Use a different load factor after the initial growth
+        const loadFactor = isInitialSize ? initialLoadFactorNumerator : normalLoadFactorNumerator;
+        isInitialSize = false;
+
+        // Use next prime number size for better distribution
+        const ndim = nextPrime(table.length * 2);
+        countTrigger = (ndim * loadFactor) / loadFactorDenominator;
+
         table = (cast(StringEntry*)mem.xcalloc_noscan(ndim, (table[0]).sizeof))[0 .. ndim];
+
         foreach (const se; otab[0 .. odim])
         {
             if (!se.vptr)
@@ -309,6 +369,7 @@ private:
             const sv = getValue(se.vptr);
             table[findSlot(se.hash, sv.toString())] = se;
         }
+
         mem.xfree(otab.ptr);
     }
 }
