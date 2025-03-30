@@ -977,6 +977,9 @@ extern (D) MATCHpair deduceFunctionTemplateMatch(TemplateDeclaration td, Templat
                 // doesn't match any parameter name in a templated function
                 // Similar to the error generated in mtype.d's resolveNamedArgs
                 error(instLoc, "no parameter named `%s`", fname.toChars());
+
+                // Set argi to DEFAULT_ARGI to indicate error and allow continued processing
+                // This ensures compatibility with existing test cases
                 argi = DEFAULT_ARGI;
             }
 
