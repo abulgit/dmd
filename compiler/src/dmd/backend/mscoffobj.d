@@ -667,11 +667,11 @@ void MsCoffObj_term(const(char)[] objfilename)
             hashBuf.write(pseg.SDbuf.buf[0 .. pseg.SDbuf.length()]);
         }
     }
-    
+
     // Calculate the hash based on all sections
     if (hashBuf.length > 0)
         f_timedat = calcHash(hashBuf.buf[0 .. hashBuf.length]);
-    
+
     // Add fixed value to make the hash recognizable (timestamp starts from 1970)
     f_timedat = (f_timedat & 0x7FFFFFFF) | 0x40000000; // Make sure it's a reasonable timestamp
     uint symtable_offset;
