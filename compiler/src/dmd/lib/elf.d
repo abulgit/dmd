@@ -305,7 +305,16 @@ final class LibElf : Library
                 static assert(0, "unsupported operating system");
 
             time_t file_time = 0;
-            time(&file_time);
+            
+            // Use deterministic timestamp instead of current time
+            import dmd.root.hash : calcHash;
+            // Create a hash from the object module content
+            if (om.base && om.length > 0)
+                file_time = calcHash(om.base[0 .. om.length]);
+            
+            // Add fixed value to make the hash recognizable (start from 1970s)
+            file_time = (file_time & 0x7FFFFFFF) | 0x40000000;
+            
             om.file_time = cast(long)file_time;
             om.file_mode = (1 << 15) | (6 << 6) | (4 << 3) | (4 << 0); // 0100644
         }
@@ -434,20 +443,44 @@ private:
         om.length = cast(uint)(hoffset - (8 + ElfLibHeader.sizeof));
         om.offset = 8;
         om.name = "";
-        .time(&om.file_time);
+        
+        // Use deterministic timestamp instead of current time
+        // Calculate a hash based on library contents
+        import dmd.root.hash : calcHash;
+        
+        // Collect all symbol and module data in a buffer
+        OutBuffer hashBuf;
+        foreach (os; objsymbols)
+        {
+            // Add symbol names to the buffer
+            hashBuf.writestring(os.name);
+            
+            // Add module content to the buffer if available
+            if (os.om && os.om.base && os.om.length > 0)
+                hashBuf.write(os.om.base[0 .. os.om.length]);
+        }
+        
+        // Calculate the hash from the buffer
+        om.file_time = 0;
+        if (hashBuf.length > 0)
+            om.file_time = calcHash(hashBuf.buf[0 .. hashBuf.length]);
+            
+        // Add fixed value to make the hash recognizable (start from 1970s)
+        om.file_time = (om.file_time & 0x7FFFFFFF) | 0x40000000;
+        
         om.user_id = 0;
         om.group_id = 0;
         om.file_mode = 0;
         ElfLibHeader h;
         ElfOmToHeader(&h, &om);
         libbuf.write((&h)[0 .. 1]);
-        char[4] buf;
-        Port.writelongBE(cast(uint)objsymbols.length, buf.ptr);
-        libbuf.write(buf[0 .. 4]);
+        char[4] buf2;
+        Port.writelongBE(cast(uint)objsymbols.length, buf2.ptr);
+        libbuf.write(buf2[0 .. 4]);
         foreach (os; objsymbols)
         {
-            Port.writelongBE(os.om.offset, buf.ptr);
-            libbuf.write(buf[0 .. 4]);
+            Port.writelongBE(os.om.offset, buf2.ptr);
+            libbuf.write(buf2[0 .. 4]);
         }
         foreach (os; objsymbols)
         {
