@@ -36,8 +36,6 @@ import dmd.backend.mscoff;
 
 import dmd.common.outbuffer;
 
-import dmd.root.hash : calcHash;
-
 nothrow:
 @safe:
 
@@ -651,29 +649,11 @@ void MsCoffObj_term(const(char)[] objfilename)
     BIGOBJ_HEADER header = void;
     IMAGE_FILE_HEADER header_old = void;
 
-    // Calculate a deterministic hash instead of using the current time
-    // Use a hash of all section data to ensure deterministic builds
-    uint f_timedat = 0;
-    // Hash sections and their contents for deterministic timestamp
-    import dmd.root.hash : calcHash;
-    // Collect all section data to hash
-    OutBuffer hashBuf;
-    for (segidx_t seg = 1; seg < SegData.length; seg++)
-    {
-        seg_data* pseg = SegData[seg];
-        if (pseg.SDbuf && pseg.SDbuf.length())
-        {
-            // Add segment contents to the buffer
-            hashBuf.write(pseg.SDbuf.buf[0 .. pseg.SDbuf.length()]);
-        }
-    }
+    // Initialize headers to ensure no uninitialized memory affects hashing
+    memset(&header, 0, header.sizeof);
+    memset(&header_old, 0, header_old.sizeof);
 
-    // Calculate the hash based on all sections
-    if (hashBuf.length > 0)
-        f_timedat = calcHash(hashBuf.buf[0 .. hashBuf.length]);
-
-    // Add fixed value to make the hash recognizable (timestamp starts from 1970)
-    f_timedat = (f_timedat & 0x7FFFFFFF) | 0x40000000; // Make sure it's a reasonable timestamp
+    time_t f_timedat = 0;
     uint symtable_offset;
 
     if (bigobj)
@@ -683,7 +663,7 @@ void MsCoffObj_term(const(char)[] objfilename)
         header.Version = 2;
         header.Machine = I64 ? IMAGE_FILE_MACHINE_AMD64 : IMAGE_FILE_MACHINE_I386;
         header.NumberOfSections = scnhdr_cnt;
-        header.TimeDateStamp = f_timedat;
+        header.TimeDateStamp = cast(uint)f_timedat;
         static immutable ubyte[16] uuid =
                                   [ '\xc7', '\xa1', '\xba', '\xd1', '\xee', '\xba', '\xa9', '\x4b',
                                     '\xaf', '\x20', '\xfa', '\xf6', '\x6a', '\xa4', '\xdc', '\xb8' ];
@@ -700,7 +680,7 @@ void MsCoffObj_term(const(char)[] objfilename)
     {
         header_old.Machine = I64 ? IMAGE_FILE_MACHINE_AMD64 : IMAGE_FILE_MACHINE_I386;
         header_old.NumberOfSections = cast(ushort)scnhdr_cnt;
-        header_old.TimeDateStamp = f_timedat;
+        header_old.TimeDateStamp = cast(uint)f_timedat;
         header_old.SizeOfOptionalHeader = 0;
         header_old.Characteristics = 0;
         foffset = (header_old).sizeof;   // start after header
