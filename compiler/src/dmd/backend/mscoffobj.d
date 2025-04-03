@@ -649,11 +649,15 @@ void MsCoffObj_term(const(char)[] objfilename)
     BIGOBJ_HEADER header = void;
     IMAGE_FILE_HEADER header_old = void;
 
-    // Initialize headers to ensure no uninitialized memory affects hashing
-    memset(&header, 0, header.sizeof);
-    memset(&header_old, 0, header_old.sizeof);
+    // Use timestamp from SOURCE_DATE_EPOCH for deterministic builds
+    time_t f_timedat;
+    const(char)* source_date_epoch = getenv("SOURCE_DATE_EPOCH");
+    if (source_date_epoch)
+    {
+        // Convert from string to time_t value
+        f_timedat = cast(time_t)strtoul(source_date_epoch, null, 10);
+    }
 
-    time_t f_timedat = 0;
     uint symtable_offset;
 
     if (bigobj)
@@ -1150,8 +1154,6 @@ void MsCoffObj_ehtables(Symbol* sfunc,uint size,Symbol* ehsym)
      */
 
     int align_ = I64 ? IMAGE_SCN_ALIGN_8BYTES : IMAGE_SCN_ALIGN_4BYTES;  // align to _tysize[TYnptr]
-
-    // The size is (FuncTable).sizeof in deh2.d
     const int seg =
     MsCoffObj_getsegment("._deh$B", IMAGE_SCN_CNT_INITIALIZED_DATA |
                                       align_ |
