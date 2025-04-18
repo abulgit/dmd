@@ -703,7 +703,7 @@ extern (D) bool checkComplexTransition(Type type, Loc loc, Scope* sc)
  *      MATCHxxxx
  */
 extern (D) MATCH callMatch(FuncDeclaration fd, TypeFunction tf, Type tthis, ArgumentList argumentList,
-        int flag = 0, void delegate(const(char)*) scope errorHelper = null, Scope* sc = null)
+        int flag = 0, void delegate(const(char)*, Loc = Loc.initial) scope errorHelper = null, Scope* sc = null)
 {
     //printf("callMatch() fd: %s, tf: %s\n", fd ? fd.ident.toChars() : "null", toChars(tf));
     MATCH match = MATCH.exact; // assume exact match
@@ -872,7 +872,12 @@ extern (D) MATCH callMatch(FuncDeclaration fd, TypeFunction tf, Type tthis, Argu
                         u + 1, parameterToChars(p, tf, false));
                 // If an error happened previously, `pMessage` was already filled
                 else if (buf.length == 0)
+                {
                     buf.writestring(tf.getParamError(args[u], p));
+                    // Use the argument's location for the error message instead of the function call location
+                    errorHelper(buf.peekChars(), args[u].loc);
+                    return MATCH.nomatch;
+                }
 
                 errorHelper(buf.peekChars());
             }
