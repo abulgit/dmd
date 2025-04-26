@@ -4324,8 +4324,8 @@ extern (C++) class TemplateInstance : ScopeDsymbol
                 {
                     if (td._scope)
                     {
-                        // Try to fix forward reference. Ungag errors while doing so.
-                        Ungag ungag = td.ungagSpeculative();
+                        // Try to fix forward reference. Ungag errors while doing so using ErrorSink.
+                        auto errorSinkSwitch = td.ungagSpeculativeWithErrorSink(td._scope);
                         td.dsymbolSemantic(td._scope);
                     }
                     if (td.semanticRun == PASS.initial)

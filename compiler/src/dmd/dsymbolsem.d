@@ -2919,8 +2919,8 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
             }
         }
 
-        // Ungag errors when not speculative
-        Ungag ungag = sd.ungagSpeculative();
+        // Ungag errors when not speculative using ErrorSink
+        auto errorSinkSwitch = sd.ungagSpeculativeWithErrorSink(sc);
 
         if (sd.semanticRun == PASS.initial)
         {
@@ -3422,8 +3422,8 @@ private extern(C++) final class DsymbolSemanticVisitor : Visitor
                     tc.sym = cldec;
             }
 
-        // Ungag errors when not speculative
-        Ungag ungag = cldec.ungagSpeculative();
+        // Ungag errors when not speculative using ErrorSink
+        auto errorSinkSwitch = cldec.ungagSpeculativeWithErrorSink(sc);
 
         if (cldec.semanticRun == PASS.initial)
         {
@@ -4799,9 +4799,11 @@ void templateInstanceSemantic(TemplateInstance tempinst, Scope* sc, ArgumentList
         {
             printf("Recursive template expansion\n");
         }
-        auto ungag = Ungag(global.gag);
-        if (!tempinst.gagged)
-            global.gag = 0;
+        // Use ErrorSinkSwitch instead of Ungag
+        auto errorSinkSwitch = sc && sc.eSink == global.errorSinkNull ?
+            ErrorSinkSwitch(sc, global.errorSink) :
+            ErrorSinkSwitch(sc, sc.eSink);
+
         .error(tempinst.loc, "%s `%s` recursive template expansion", tempinst.kind, tempinst.toPrettyChars);
         if (tempinst.gagged)
             tempinst.semanticRun = PASS.initial;
@@ -5560,14 +5562,12 @@ void aliasSemantic(AliasDeclaration ds, Scope* sc)
     const errors = global.errors;
     Type oldtype = ds.type;
 
-    // Ungag errors when not instantiated DeclDefs scope alias
-    auto ungag = Ungag(global.gag);
-    //printf("%s parent = %s, gag = %d, instantiated = %d\n", ds.toChars(), ds.parent.toChars(), global.gag, ds.isInstantiated() !is null);
-    if (ds.parent && global.gag && !ds.isInstantiated() && !ds.toParent2().isFuncDeclaration() && (sc.minst || sc.tinst))
-    {
-        //printf("%s type = %s\n", ds.toPrettyChars(), ds.type.toChars());
-        global.gag = 0;
-    }
+    // Ungag errors when not instantiated DeclDefs scope alias using ErrorSink
+    auto errorSinkSwitch = sc && sc.eSink == global.errorSinkNull &&
+        ds.parent && !ds.isInstantiated() && !ds.toParent2().isFuncDeclaration() &&
+        (sc.minst || sc.tinst) ?
+            ErrorSinkSwitch(sc, global.errorSink) :
+            ErrorSinkSwitch(sc, sc.eSink);
 
     // https://issues.dlang.org/show_bug.cgi?id=18480
     // Detect `alias sym = sym;` to prevent creating loops in overload overnext lists.

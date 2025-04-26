@@ -33,6 +33,7 @@ import dmd.dscope;
 import dmd.dstruct;
 import dmd.dtemplate;
 import dmd.errors;
+import dmd.errorsink;
 import dmd.expression;
 import dmd.func;
 import dmd.globals;
@@ -119,6 +120,28 @@ struct Ungag
     extern (C++) ~this() nothrow
     {
         global.gag = oldgag;
+    }
+}
+
+/**
+ * Temporarily changes the error sink for a scope.
+ * When the object goes out of scope, the original error sink is restored.
+ */
+struct ErrorSinkSwitch
+{
+    ErrorSink oldSink;
+    Scope* sc;
+
+    extern (D) this(Scope* sc, ErrorSink newSink) nothrow @safe
+    {
+        this.sc = sc;
+        this.oldSink = sc.eSink;
+        sc.eSink = newSink;
+    }
+
+    extern (C++) ~this() nothrow
+    {
+        sc.eSink = oldSink;
     }
 }
 
@@ -683,12 +706,32 @@ extern (C++) class Dsymbol : ASTNode
         return parent.isSpeculative();
     }
 
+    /**
+     * Returns an Ungag object that temporarily disables error gagging
+     * when not in a speculative context.
+     *
+     * This is the old implementation that uses global.gag.
+     * It will be deprecated in favor of ungagSpeculativeWithErrorSink.
+     */
     final Ungag ungagSpeculative() const
     {
         const oldgag = global.gag;
         if (global.gag && !isSpeculative() && !toParent2().isFuncDeclaration())
             global.gag = 0;
         return Ungag(oldgag);
+    }
+
+    /**
+     * Returns an ErrorSinkSwitch object that temporarily changes the error sink
+     * to allow errors to be reported when not in a speculative context.
+     *
+     * This is the new implementation that uses ErrorSink instead of global.gag.
+     */
+    final ErrorSinkSwitch ungagSpeculativeWithErrorSink(Scope* sc) const
+    {
+        if (sc.eSink == global.errorSinkNull && !isSpeculative() && !toParent2().isFuncDeclaration())
+            return ErrorSinkSwitch(sc, global.errorSink);
+        return ErrorSinkSwitch(sc, sc.eSink);
     }
 
     // kludge for template.isSymbol()

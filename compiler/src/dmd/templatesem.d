@@ -1933,7 +1933,8 @@ void functionResolve(ref MatchAccumulator m, Dsymbol dstart, Loc loc, Scope* sc,
         if (!fd.isCtorDeclaration &&
             fd.semanticRun < PASS.semanticdone)
         {
-            fd.ungagSpeculative();
+            // Use ErrorSinkSwitch instead of Ungag
+            auto errorSinkSwitch = fd.ungagSpeculativeWithErrorSink(sc);
             fd.dsymbolSemantic(null);
         }
         if (fd.semanticRun < PASS.semanticdone)
@@ -2105,8 +2106,8 @@ void functionResolve(ref MatchAccumulator m, Dsymbol dstart, Loc loc, Scope* sc,
 
         if (td.semanticRun == PASS.initial && td._scope)
         {
-            // Try to fix forward reference. Ungag errors while doing so.
-            td.ungagSpeculative();
+            // Try to fix forward reference. Ungag errors while doing so using ErrorSink.
+            auto errorSinkSwitch = td.ungagSpeculativeWithErrorSink(td._scope);
             td.dsymbolSemantic(td._scope);
         }
         if (td.semanticRun == PASS.initial)
