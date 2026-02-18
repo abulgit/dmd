@@ -97,6 +97,12 @@ extern (C++) abstract class AttribDeclaration : Dsymbol
         return sc2;
     }
 
+    override void addComment(const(char)* comment)
+    {
+        if (comment)
+            decl.foreachDsymbol( s => s.addComment(comment) );
+    }
+
     override const(char)* kind() const
     {
         return "attribute";
@@ -527,6 +533,15 @@ extern (C++) class ConditionalDeclaration : AttribDeclaration
         return new ConditionalDeclaration(loc, condition.syntaxCopy(), Dsymbol.arraySyntaxCopy(decl), Dsymbol.arraySyntaxCopy(elsedecl));
     }
 
+    override void addComment(const(char)* comment)
+    {
+        if (comment)
+        {
+            decl    .foreachDsymbol( s => s.addComment(comment) );
+            elsedecl.foreachDsymbol( s => s.addComment(comment) );
+        }
+    }
+
     override void accept(Visitor v)
     {
         v.visit(this);
@@ -608,6 +623,8 @@ extern (C++) final class StaticForeachDeclaration : AttribDeclaration
     {
         return "static foreach";
     }
+
+    override void addComment(const(char)* comment) {}
 
     override void accept(Visitor v)
     {

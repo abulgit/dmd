@@ -28,6 +28,7 @@ class AttribDeclaration : public Dsymbol
 {
 public:
     Dsymbols *decl;     // array of Dsymbol's
+    void addComment(const utf8_t *comment) override;
     const char *kind() const override;
     void accept(Visitor *v) override { v->visit(this); }
 };
@@ -133,6 +134,7 @@ public:
     Dsymbols *elsedecl; // array of Dsymbol's for else block
 
     ConditionalDeclaration *syntaxCopy(Dsymbol *s) override;
+    void addComment(const utf8_t *comment) override;
     void accept(Visitor *v) override { v->visit(this); }
 };
 
@@ -158,6 +160,7 @@ public:
     Dsymbols *cache;
 
     StaticForeachDeclaration *syntaxCopy(Dsymbol *s) override;
+    void addComment(const utf8_t *comment) override;
     const char *kind() const override;
     void accept(Visitor *v) override { v->visit(this); }
 };

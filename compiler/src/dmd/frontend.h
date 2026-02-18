@@ -6194,6 +6194,7 @@ class AttribDeclaration : public Dsymbol
 {
 public:
     Array<Dsymbol* >* decl;
+    void addComment(const char* comment) override;
     const char* kind() const override;
     void accept(Visitor* v) override;
 };
@@ -6288,6 +6289,7 @@ public:
     Condition* condition;
     Array<Dsymbol* >* elsedecl;
     ConditionalDeclaration* syntaxCopy(Dsymbol* s) override;
+    void addComment(const char* comment) override;
     void accept(Visitor* v) override;
 };
 
@@ -6311,6 +6313,7 @@ public:
     bool cached;
     Array<Dsymbol* >* cache;
     StaticForeachDeclaration* syntaxCopy(Dsymbol* s) override;
+    void addComment(const char* comment) override;
     const char* kind() const override;
     void accept(Visitor* v) override;
 };
