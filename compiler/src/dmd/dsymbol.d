@@ -771,8 +771,22 @@ extern (C++) class Dsymbol : ASTNode
      */
     void addComment(const(char)* comment)
     {
-        import dmd.dsymbolsem;
-        dmd.dsymbolsem.addComment(this, comment);
+        if (!comment || !*comment)
+            return;
+
+        void* h = cast(void*) this; // just the pointer is the key
+        auto p = h in commentHashTable;
+        if (!p)
+        {
+            commentHashTable[h] = comment;
+            return;
+        }
+        if (strcmp(*p, comment) != 0)
+        {
+            import dmd.lexer : Lexer;
+            // Concatenate the two
+            *p = Lexer.combineComments((*p).toDString(), comment.toDString(), true);
+        }
     }
 
     /// get documentation comment for this Dsymbol

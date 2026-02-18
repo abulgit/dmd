@@ -9284,15 +9284,15 @@ extern (C++) class AddCommentVisitor: Visitor
     {
         if (comment)
         {
-            atd.include(null).foreachDsymbol( s => s.addComment(comment) );
+            atd.include(null).foreachDsymbol( s => addComment(s, comment) );
         }
     }
     override void visit(ConditionalDeclaration cd)
     {
         if (comment)
         {
-            cd.decl    .foreachDsymbol( s => s.addComment(comment) );
-            cd.elsedecl.foreachDsymbol( s => s.addComment(comment) );
+            cd.decl    .foreachDsymbol( s => addComment(s, comment) );
+            cd.elsedecl.foreachDsymbol( s => addComment(s, comment) );
         }
     }
     override void visit(StaticForeachDeclaration sfd) {}
