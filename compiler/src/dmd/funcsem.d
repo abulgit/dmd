@@ -2116,10 +2116,11 @@ FuncDeclaration resolveFuncCall(Loc loc, Scope* sc, Dsymbol s,
             .error(loc, "%smethod `%s` is not callable using a %sobject",
                    funcBuf.peekChars(), fd.toPrettyChars(), thisBuf.peekChars());
 
+        const qualLoc = tf.paramCloseLoc != Loc.initial ? tf.paramCloseLoc : fd.loc;
         if (mismatches.isNotShared)
-            .errorSupplemental(fd.loc, "Consider adding `shared` here");
+            .errorSupplemental(qualLoc, "Consider adding `shared` here");
         else if (mismatches.isMutable)
-            .errorSupplemental(fd.loc, "Consider adding `const` or `inout` here");
+            .errorSupplemental(qualLoc, "Consider adding `const` or `inout` here");
         return null;
     }
 

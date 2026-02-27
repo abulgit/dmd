@@ -9,13 +9,13 @@ fail_compilation/test24353.d(37): Error: mutable method `test24353.S.opApply` is
                 ^
 fail_compilation/test24353.d(28):        Consider adding a method type qualifier here
     int opApply(int delegate(int) dg)
-        ^
+                                    ^
 fail_compilation/test24353.d(40): Error:  shared const method `test24353.S2.opApply` is not callable using a `const(S2)` foreach aggregate
     foreach (i, e; s2) {} // mod error
                    ^
 fail_compilation/test24353.d(47):        Consider adding a method type qualifier here
     int opApply(int delegate(int, int) dg) const shared;
-        ^
+                                         ^
 fail_compilation/test24353.d(42): Error: cannot uniquely infer `foreach` argument types
     foreach (i, e; const S3()) {} // cannot infer
     ^

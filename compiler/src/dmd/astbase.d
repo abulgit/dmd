@@ -3867,6 +3867,7 @@ struct ASTBase
         // .next is the return type
 
         ParameterList parameterList;   // function parameters
+        Loc paramCloseLoc;             // location of closing ')' of parameter list, for diagnostics
 
         private enum FunctionFlag : uint
         {
@@ -3945,6 +3946,7 @@ struct ASTBase
             t.isInOutQual = isInOutQual;
             t.trust = trust;
             t.fargs = fargs;
+            t.paramCloseLoc = paramCloseLoc;
             return t;
         }
 

@@ -4262,14 +4262,16 @@ class Parser(AST, Lexer = dmd.lexer.Lexer) : Lexer
                     }
 
                     auto parameterList = parseParameterList(null);
+                    const paramCloseLoc = prevloc; // location of closing ')'
 
                     /* Parse const/immutable/shared/inout/nothrow/pure/return postfix
                      */
                     // merge prefix storage classes
                     STC stc = parsePostfix(storageClass, pudas);
 
-                    AST.Type tf = new AST.TypeFunction(parameterList, t, linkage, stc);
-                    tf = AST.addSTC(tf, stc);
+                    auto tfunc = new AST.TypeFunction(parameterList, t, linkage, stc);
+                    tfunc.paramCloseLoc = paramCloseLoc;
+                    AST.Type tf = AST.addSTC(tfunc, stc);
                     if (pdisable)
                         *pdisable = stc & STC.disable ? true : false;
 

@@ -828,7 +828,9 @@ Statement statementSemanticVisit(Statement s, Scope* sc)
                                     !fd.type.mod ? "mutable" : fd.type.modToChars(),
                                     fd.toPrettyChars(),
                                     fs.aggr.type.toChars());
-                                errorSupplemental(fd.loc, "Consider adding a method type qualifier here");
+                                const fdtf = fd.type.isTypeFunction();
+                                const qualLoc = fdtf && fdtf.paramCloseLoc != Loc.initial ? fdtf.paramCloseLoc : fd.loc;
+                                errorSupplemental(qualLoc, "Consider adding a method type qualifier here");
                                 return setError();
                             }
                         }

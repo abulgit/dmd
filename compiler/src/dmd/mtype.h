@@ -462,6 +462,7 @@ public:
     // .next is the return type
 
     ParameterList parameterList; // function parameters
+    Loc paramCloseLoc;           // location of closing ')' of parameter list, for diagnostics
     uint16_t bitFields;
     LINK linkage;                // calling convention
     TRUST trust;                 // level of trust

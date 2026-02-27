@@ -1343,6 +1343,7 @@ extern (C++) final class TypeFunction : TypeNext
     import dmd.common.bitfields : generateBitFields;
     mixin(generateBitFields!(BitFields, ushort));
 
+    Loc paramCloseLoc;          // location of closing ')' of parameter list, for diagnostics
     LINK linkage;               // calling convention
     TRUST trust;                // level of trust
     PURE purity = PURE.impure;
@@ -1425,6 +1426,7 @@ extern (C++) final class TypeFunction : TypeNext
         t.trust = trust;
         t.inferenceArguments = inferenceArguments;
         t.isCtor = isCtor;
+        t.paramCloseLoc = paramCloseLoc;
         return t;
     }
 
