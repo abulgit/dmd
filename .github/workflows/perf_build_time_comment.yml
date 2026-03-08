@@ -1,0 +1,145 @@
+name: perf_build_time_comment
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base ref to compare against for manual runs
+        required: false
+        default: master
+      head_ref:
+        description: Head ref to compare for manual runs (defaults to current checkout)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare-build-time:
+    name: Compare build time
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      MODEL: 64
+      N: 2
+      HOST_DMD: dmd
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install host D compiler
+        uses: dlang-community/setup-dlang@v1.3.0
+        with:
+          compiler: dmd-latest
+
+      - name: Determine refs
+        id: refs
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+            echo "base_branch=${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+            echo "base_label=base" >> "$GITHUB_OUTPUT"
+            echo "head_label=head" >> "$GITHUB_OUTPUT"
+          else
+            base_ref='${{ inputs.base_ref }}'
+            head_ref='${{ inputs.head_ref }}'
+            if [[ -z "$base_ref" ]]; then
+              base_ref='master'
+            fi
+            git fetch --no-tags origin "$base_ref"
+            echo "base_sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+            echo "base_branch=$base_ref" >> "$GITHUB_OUTPUT"
+
+            if [[ -n "$head_ref" ]]; then
+              git fetch --no-tags origin "$head_ref"
+              echo "head_sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+            else
+              echo "head_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            fi
+            echo "base_label=base" >> "$GITHUB_OUTPUT"
+            echo "head_label=head" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Benchmark base vs head build time
+        run: |
+          python3 .github/scripts/benchmark_build_time.py \
+            --repo-root "$PWD" \
+            --base-sha "${{ steps.refs.outputs.base_sha }}" \
+            --head-sha "${{ steps.refs.outputs.head_sha }}" \
+            --base-branch "${{ steps.refs.outputs.base_branch }}" \
+            --base-label "${{ steps.refs.outputs.base_label }}" \
+            --head-label "${{ steps.refs.outputs.head_label }}" \
+            --output-dir "$PWD/perf-results"
+
+      - name: Upload performance artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-build-time-results
+          path: perf-results/
+
+      - name: Add summary
+        run: cat perf-results/comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('perf-results/comment.md', 'utf8');
+            const marker = '<!-- augment-dmd-build-time-bot -->';
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(comment =>
+              comment.user &&
+              comment.user.type === 'Bot' &&
+              comment.body &&
+              comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body,
+              });
+            }
