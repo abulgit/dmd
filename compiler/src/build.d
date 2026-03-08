@@ -16,6 +16,8 @@ zip target - requires Info-ZIP or equivalent (zip32.exe)
 
 version(CoreDdoc) {} else:
 
+import core.thread : Thread;
+
 import std.algorithm, std.conv, std.datetime, std.exception, std.file, std.format, std.functional,
        std.getopt, std.path, std.process, std.range, std.stdio, std.string, std.traits;
 
@@ -79,6 +81,9 @@ int main(string[] args)
 
 void runMain(string[] args)
 {
+    // Temporary deliberate slowdown for validating the PR performance bot.
+    Thread.sleep(dur!"seconds"(8));
+
     jobs = totalCPUs;
     bool calledFromMake = false;
     auto res = getopt(args,
