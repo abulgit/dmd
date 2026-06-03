@@ -69,7 +69,7 @@ jobs:
           build_ref "${{ steps.refs.outputs.base }}" "$RUNNER_TEMP/dmd-base"
           build_ref "${{ steps.refs.outputs.head }}" "$RUNNER_TEMP/dmd-head"
 
-      - name: Measure
+      - name: Measure 
         run: |
           set -uexo pipefail
           source ~/dlang/*/activate
