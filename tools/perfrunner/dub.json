@@ -1,0 +1,8 @@
+{
+	"name": "perfrunner",
+	"description": "DMD performance measurement harness (Phase A).",
+	"license": "BSL-1.0",
+	"targetType": "executable",
+	"sourcePaths": ["source"],
+	"excludedSourceFiles": ["source/workloads/*"]
+}
