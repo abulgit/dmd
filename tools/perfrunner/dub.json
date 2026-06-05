@@ -1,0 +1,7 @@
+{
+	"name": "perfrunner",
+	"description": "DMD performance measurement (dev-phase)",
+	"targetType": "executable",
+	"sourcePaths": ["source"],
+	"excludedSourceFiles": ["source/workloads/*"]
+}
