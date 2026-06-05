@@ -16,7 +16,7 @@ struct MetricDef
     string method;
 }
 
-// Some initial metrics to measure will add more later 
+// Some initial metrics to measure will add more later
 immutable MetricDef[] initials = [
     MetricDef("compile_hello_debug_instr",   "compile hello.d (instr)",    "count", "cachegrind"),
     MetricDef("compile_hello_release_instr", "compile hello.d -O (instr)", "count", "cachegrind"),

@@ -2,7 +2,7 @@ module runner;
 
 import std.process : execute;
 
-// Outcome 
+// Outcome
 struct RunResult
 {
     int status;     // process exit code
