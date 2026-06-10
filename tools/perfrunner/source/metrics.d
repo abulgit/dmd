@@ -5,8 +5,9 @@ import std.file : copy, exists, getSize, remove;
 import std.path : buildPath;
 import std.regex : ctRegex, matchFirst;
 
+import std.process : execute;
+
 import cachegrind : instructions;
-import runner : run;
 
 struct MetricDef
 {
@@ -52,7 +53,7 @@ private long strippedSize(string binary, string copyPath)
 private long helloSize(string dmd, string workload, string tmp, string tag)
 {
     auto exe = buildPath(tmp, tag ~ "-hello");
-    auto r = run([dmd, workload, "-of=" ~ exe]);
+    auto r = execute([dmd, workload, "-of=" ~ exe]);
     if (r.status != 0)
         throw new Exception("compiling hello executable failed:\n" ~ r.output);
     strip(exe);
@@ -61,7 +62,7 @@ private long helloSize(string dmd, string workload, string tmp, string tag)
 
 private void strip(string path)
 {
-    auto r = run(["strip", path]);
+    auto r = execute(["strip", path]);
     if (r.status != 0)
         throw new Exception("strip failed:\n" ~ r.output);
 }
@@ -70,7 +71,7 @@ private void strip(string path)
 private long maxRss(string dmd, string workload, string tmp, string tag)
 {
     auto obj = buildPath(tmp, tag ~ "-rss.o");
-    auto r = run(["/usr/bin/time", "-v", dmd, "-c", workload, "-of=" ~ obj]);
+    auto r = execute(["/usr/bin/time", "-v", dmd, "-c", workload, "-of=" ~ obj]);
     if (r.status != 0)
         throw new Exception("/usr/bin/time failed:\n" ~ r.output);
     return parseMaxRss(r.output);

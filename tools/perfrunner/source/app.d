@@ -9,7 +9,7 @@ import metrics : measure, initials;
 import report : MetricResult, render, Report;
 
 // Initial workload: the one source file compile to measure DMD.
-enum workload = buildPath(__FILE_FULL_PATH__.dirName, "workloads", "hello.d");
+enum workload = buildPath(__FILE_FULL_PATH__.dirName.dirName, "workloads", "hello.d");
 
 version (unittest) {} else
 int main(string[] args)

@@ -1,21 +1,19 @@
 module cachegrind;
 
-import std.array : replace;
+import std.algorithm : startsWith;
+import std.array : split;
 import std.conv : to;
+import std.file : readText;
 import std.path : buildPath;
-import std.regex : ctRegex, matchFirst;
+import std.process : execute;
+import std.string : lineSplitter, strip;
 
-import runner : run;
-
-private enum iRefsRe = ctRegex!(`I\s+refs:\s+([\d,]+)`);
-
-// Parse the "I refs:" instruction count out of cachegrind's output.
-long parseIRefs(string output)
+long parseInstructions(string cgout)
 {
-    auto m = matchFirst(output, iRefsRe);
-    if (m.empty)
-        throw new Exception("could not parse cachegrind 'I refs:'");
-    return m[1].replace(",", "").to!long;
+    foreach (line; cgout.lineSplitter)
+        if (line.startsWith("summary:"))
+            return line["summary:".length .. $].strip.split[0].to!long;
+    throw new Exception("could not find 'summary:' line in cachegrind output");
 }
 
 // Compile the workload under cachegrind
@@ -25,14 +23,14 @@ long instructions(string dmd, string[] dflags, string workload, string tmp, stri
     auto cgOut = buildPath(tmp, tag ~ ".cgout");
     auto cmd = ["valgrind", "--tool=cachegrind", "--cachegrind-out-file=" ~ cgOut,
         dmd, "-c"] ~ dflags ~ [workload, "-of=" ~ obj];
-    auto r = run(cmd);
+    auto r = execute(cmd);
     if (r.status != 0)
         throw new Exception("cachegrind failed:\n" ~ r.output);
-    return parseIRefs(r.output);
+    return parseInstructions(readText(cgOut));
 }
 
 unittest
 {
-    auto sample = "==42== I   refs:      1,234,500,000\n";
-    assert(parseIRefs(sample) == 1_234_500_000);
+    auto sample = "events: Ir\nfn=(1) main\n5 100\nsummary: 1234500000\n";
+    assert(parseInstructions(sample) == 1_234_500_000);
 }
