@@ -25,7 +25,8 @@ jobs:
       OS_NAME: linux
       MODEL: 64
       FULL_BUILD: false
-      HOST_DMD: dmd-2.112.0
+      HOST_DMD: ldc-1.42.0
+      ENABLE_LTO: 1
     defaults:
       run:
         shell: bash
@@ -81,7 +82,7 @@ jobs:
             --base-sha "${{ steps.refs.outputs.base }}" \
             --head-sha "${{ steps.refs.outputs.head }}" \
             --pr "${{ github.event.pull_request.number || 0 }}" \
-            --host-dmd "${HOST_DMD#dmd-}" \
+            --host-dmd "$HOST_DMD" \
             --out "$GITHUB_WORKSPACE/results.json"
 
       - name: Post sticky PR comment
