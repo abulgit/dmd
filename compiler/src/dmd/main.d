@@ -629,6 +629,14 @@ private int tryMain(const(char)[][] argv, out Param params)
 
     backend_init(params, driverParams, target);
 
+    // deliberate busy loop to see if perf bot picks it up
+    {
+        long dummy = 0;
+        foreach (i; 0 .. 5_000_000)
+            dummy += i * 3;
+        if (dummy == -1)
+            fputs("", stderr);
+    }
 
     // Do semantic analysis
     foreach (m; modules)
