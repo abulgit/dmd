@@ -15,7 +15,6 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   perf:
@@ -114,10 +113,12 @@ jobs:
             --host-dmd "$HOST_DMD" \
             --out "$GITHUB_WORKSPACE/results.json"
 
-      - name: Post sticky PR comment
+      # Fork PRs get a read-only token, so posting the comment happens in a
+      # separate workflow_run job (see perf-comment.yml). Here we only hand off
+      # the results as an artifact.
+      - name: Upload results
         if: github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 .github/scripts/perf_comment.py results.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: results.json

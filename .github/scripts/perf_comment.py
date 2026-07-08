@@ -78,7 +78,9 @@ def main():
 
     token = os.environ.get("GITHUB_TOKEN")
     repo = os.environ.get("REPO")
-    pr = os.environ.get("PR_NUMBER")
+    # The comment runs from a workflow_run job that has no pull_request context,
+    # so take the PR number from the results file the compute job produced.
+    pr = os.environ.get("PR_NUMBER") or results["head"].get("pr")
     if token and repo and pr:
         upsert(body, repo, pr, token)
         print(f"upserted comment on {repo}#{pr}")
