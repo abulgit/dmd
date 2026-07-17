@@ -22,6 +22,8 @@ private size_t hash(size_t a) pure nothrow @nogc @safe
     return a ^ (a >> 7) ^ (a >> 4);
 }
 
+private enum aaLoadFactor = 1;
+
 private struct KeyValueTemplate(K,V)
 {
     K key;
@@ -101,7 +103,7 @@ private Value* dmd_aaGet(AA** paa, Key key) pure nothrow
     e.value = null;
     *pe = e;
     //printf("length = %d, nodes = %d\n", (*paa)->b_length, nodes);
-    if (nodes > (*paa).b_length * 2)
+    if (nodes > (*paa).b_length * aaLoadFactor)
     {
         //printf("rehash\n");
         dmd_aaRehash(paa);
