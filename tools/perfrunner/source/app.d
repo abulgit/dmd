@@ -15,6 +15,7 @@ version (unittest) {} else
 int main(string[] args)
 {
     string baseDmd, headDmd, baseSha, headSha, hostDmd;
+    string basePhobos, headPhobos;
     string os = "ubuntu-latest";
     string outPath = "results.json";
     long pr;
@@ -22,6 +23,8 @@ int main(string[] args)
     auto help = getopt(args,
         "base-dmd", "path to the base (merge-base) dmd binary", &baseDmd,
         "head-dmd", "path to the head (PR) dmd binary", &headDmd,
+        "base-phobos", "path to the base phobos checkout (enables Phobos workload)", &basePhobos,
+        "head-phobos", "path to the head phobos checkout (enables Phobos workload)", &headPhobos,
         "base-sha", "base commit sha (metadata)", &baseSha,
         "head-sha", "head commit sha (metadata)", &headSha,
         "pr",       "pull request number (metadata)", &pr,
@@ -46,13 +49,14 @@ int main(string[] args)
     auto tmp = buildPath(tempDir, "perfrunner");
     mkdirRecurse(tmp);
 
-    auto base = measure(baseDmd, workload, tmp, "base");
-    auto head = measure(headDmd, workload, tmp, "head");
+    auto base = measure(baseDmd, workload, basePhobos, tmp, "base");
+    auto head = measure(headDmd, workload, headPhobos, tmp, "head");
 
     MetricResult[] metrics;
     foreach (def; initials)
-        metrics ~= MetricResult(def.id, def.label, def.unit, def.method,
-            base[def.id], head[def.id]);
+        if (def.id in base && def.id in head)
+            metrics ~= MetricResult(def.id, def.label, def.unit, def.method,
+                base[def.id], head[def.id]);
 
     auto rep = Report(baseSha, "merge-base", headSha, pr, os, hostDmd, metrics);
     write(outPath, render(rep));

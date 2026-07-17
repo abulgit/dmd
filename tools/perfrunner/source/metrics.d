@@ -5,9 +5,9 @@ import std.file : copy, exists, getSize, remove;
 import std.path : buildPath;
 import std.regex : ctRegex, matchFirst;
 
-import std.process : execute;
+import std.process : execute, Config;
 
-import cachegrind : instructions;
+import cachegrind : instructions, instructionsAt;
 
 struct MetricDef
 {
@@ -24,19 +24,35 @@ immutable MetricDef[] initials = [
     MetricDef("dmd_binary_size",             "dmd binary size (stripped)", "bytes", "stat"),
     MetricDef("hello_binary_size",           "hello binary size",          "bytes", "stat"),
     MetricDef("hello_max_rss",               "peak RSS (compile hello.d)", "kb",    "time -v"),
+    // Symbol-heavy front-end workload: analyse all of Phobos without codegen.
+    MetricDef("compile_phobos_instr",        "compile Phobos (instr)",     "count", "cachegrind"),
+    MetricDef("phobos_max_rss",              "peak RSS (Phobos)",          "kb",    "time -v"),
 ];
 
-// Measure every metric for one dmd binary. `tag` ("base"/"head")
-// keeps the two runs' temp files apart
-long[string] measure(string dmd, string workload, string tmp, string tag)
+// dmd arguments for the Phobos workload, run with the phobos dir as CWD so the
+// compiler's own dmd.conf resolves std/core imports. `-o-` keeps it front-end
+// only (no backend/codegen), `-i=std` forces full semantic of every std module.
+private immutable string[] phobosArgs = ["-o-", "-i=std", "-preview=dip1000", "std/package.d"];
+
+// Measure every metric for one dmd binary. `tag` ("base"/"head") keeps the two
+// runs' temp files apart. The Phobos metrics are only measured when `phobosDir`
+// is given (so local hello-only runs still work).
+long[string] measure(string dmd, string workload, string phobosDir, string tmp, string tag)
 {
-    return [
+    long[string] m = [
         "compile_hello_debug_instr":   instructions(dmd, [], workload, tmp, tag ~ "-dbg"),
         "compile_hello_release_instr": instructions(dmd, ["-O", "-release"], workload, tmp, tag ~ "-rel"),
         "dmd_binary_size":             strippedSize(dmd, buildPath(tmp, tag ~ "-dmd")),
         "hello_binary_size":           helloSize(dmd, workload, tmp, tag),
         "hello_max_rss":               maxRss(dmd, workload, tmp, tag),
     ];
+
+    if (phobosDir.length)
+    {
+        m["compile_phobos_instr"] = instructionsAt(dmd, phobosArgs.dup, tmp, tag ~ "-phobos", phobosDir);
+        m["phobos_max_rss"]       = maxRssCmd([dmd] ~ phobosArgs.dup, phobosDir);
+    }
+    return m;
 }
 
 // Byte size of `binary`
@@ -71,7 +87,13 @@ private void strip(string path)
 private long maxRss(string dmd, string workload, string tmp, string tag)
 {
     auto obj = buildPath(tmp, tag ~ "-rss.o");
-    auto r = execute(["/usr/bin/time", "-v", dmd, "-c", workload, "-of=" ~ obj]);
+    return maxRssCmd([dmd, "-c", workload, "-of=" ~ obj]);
+}
+
+// Peak RSS (KiB) of running `cmd` under /usr/bin/time, optionally from `workDir`.
+private long maxRssCmd(string[] cmd, string workDir = null)
+{
+    auto r = execute(["/usr/bin/time", "-v"] ~ cmd, null, Config.none, size_t.max, workDir);
     if (r.status != 0)
         throw new Exception("/usr/bin/time failed:\n" ~ r.output);
     return parseMaxRss(r.output);
