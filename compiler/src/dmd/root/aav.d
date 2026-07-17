@@ -18,11 +18,29 @@ nothrow:
 
 private size_t hash(size_t a) pure nothrow @nogc @safe
 {
-    a ^= (a >> 20) ^ (a >> 12);
-    return a ^ (a >> 7) ^ (a >> 4);
+    // Keys are pointers: 16-byte aligned (low bits zero) and roughly sequential
+    // from the bump allocator, so they are highly correlated. The bucket index
+    // is `hash & (b_length - 1)`, i.e. the low bits, so the mix must spread
+    // entropy all the way down. This is the murmur3 fmix full-avalanche
+    // finalizer (fmix64 on 64-bit hosts, fmix32 on 32-bit).
+    static if (size_t.sizeof == 8)
+    {
+        a ^= a >> 33;
+        a *= 0xff51afd7ed558ccd;
+        a ^= a >> 33;
+        a *= 0xc4ceb9fe1a85ec53;
+        a ^= a >> 33;
+    }
+    else
+    {
+        a ^= a >> 16;
+        a *= 0x85ebca6b;
+        a ^= a >> 13;
+        a *= 0xc2b2ae35;
+        a ^= a >> 16;
+    }
+    return a;
 }
-
-private enum aaLoadFactor = 1;
 
 private struct KeyValueTemplate(K,V)
 {
@@ -103,7 +121,7 @@ private Value* dmd_aaGet(AA** paa, Key key) pure nothrow
     e.value = null;
     *pe = e;
     //printf("length = %d, nodes = %d\n", (*paa)->b_length, nodes);
-    if (nodes > (*paa).b_length * aaLoadFactor)
+    if (nodes > (*paa).b_length * 2)
     {
         //printf("rehash\n");
         dmd_aaRehash(paa);
