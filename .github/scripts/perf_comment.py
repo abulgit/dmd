@@ -79,6 +79,7 @@ def main():
         results = json.load(f)
 
     body = render(results)
+
     print(body)
 
     token = os.environ.get("GITHUB_TOKEN")
