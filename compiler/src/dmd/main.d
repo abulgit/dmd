@@ -180,9 +180,10 @@ private int tryMain(const(char)[][] argv, out Param params)
 
     // TESTING ONLY — deliberate busy loop to verify perf bot detects regressions.
     // Uses XOR-shift (non-linear recurrence) so LLVM -O3 + LTO cannot reduce it.
+    // Seed from argv.length (runtime value) prevents compile-time constant folding.
     // Remove before merging.
     {
-        long dummy = 1;
+        long dummy = argv.length | 1;
         foreach (i; 0 .. 500_000)
         {
             dummy ^= (dummy << 13);
