@@ -179,19 +179,34 @@ private int tryMain(const(char)[][] argv, out Param params)
     global._init();
 
     // TESTING ONLY — deliberate busy loop to verify perf bot detects regressions.
-    // Uses XOR-shift (non-linear recurrence) so LLVM -O3 + LTO cannot reduce it.
-    // Seed from argv.length (runtime value) prevents compile-time constant folding.
+    // Uses ldc.llvmasm optimization barrier so LLVM cannot constant-fold or delete
+    // the loop. Same technique as Google Benchmark's DoNotOptimize.
     // Remove before merging.
     {
-        long dummy = argv.length | 1;
-        foreach (i; 0 .. 500_000)
+        version (LDC)
         {
-            dummy ^= (dummy << 13);
-            dummy ^= (dummy >>> 7);
-            dummy ^= (dummy << 17);
+            import ldc.llvmasm;
+            long dummy = 1;
+            foreach (i; 0 .. 500_000)
+            {
+                dummy ^= (dummy << 13);
+                dummy ^= (dummy >>> 7);
+                dummy ^= (dummy << 17);
+                __asm!void("", "r,~{memory}", dummy);
+            }
         }
-        if (dummy == 0)
-            fputs("", stderr);
+        else
+        {
+            long dummy = 1;
+            foreach (i; 0 .. 500_000)
+            {
+                dummy ^= (dummy << 13);
+                dummy ^= (dummy >>> 7);
+                dummy ^= (dummy << 17);
+            }
+            if (dummy == 0)
+                fputs("", stderr);
+        }
     }
 
     ErrorSink eSink = global.errorSink;
