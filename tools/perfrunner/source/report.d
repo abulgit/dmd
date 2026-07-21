@@ -11,6 +11,7 @@ struct MetricResult
     string label;
     string unit;
     string method;
+    string parent;
     long base;
     long head;
 }
@@ -32,7 +33,7 @@ string render(Report rep)
     JSONValue[] metrics;
     foreach (m; rep.metrics)
     {
-        metrics ~= JSONValue([
+        JSONValue[string] obj = [
             "id":        JSONValue(m.id),
             "label":     JSONValue(m.label),
             "unit":      JSONValue(m.unit),
@@ -40,11 +41,14 @@ string render(Report rep)
             "base":      JSONValue(m.base),
             "head":      JSONValue(m.head),
             "delta_pct": JSONValue(round(deltaPct(m.base, m.head) * 100) / 100.0),
-        ]);
+        ];
+        if (m.parent.length)
+            obj["parent"] = JSONValue(m.parent);
+        metrics ~= JSONValue(obj);
     }
 
     JSONValue root = [
-        "schema_version": JSONValue(1),
+        "schema_version": JSONValue(2),
         "base":   JSONValue(["sha": JSONValue(rep.baseSha), "ref": JSONValue(rep.baseRef)]),
         "head":   JSONValue(["sha": JSONValue(rep.headSha), "pr": JSONValue(rep.pr)]),
         "runner": JSONValue(["os": JSONValue(rep.os), "host_dmd": JSONValue(rep.hostDmd)]),
@@ -58,10 +62,10 @@ unittest
 {
     auto rep = Report("base1", "merge-base", "head1", 7, "ubuntu-latest", "2.112.0",
         [MetricResult("compile_hello_debug_instr", "compile hello.d (instr)",
-            "count", "cachegrind", 1000, 1010)]);
+            "count", "cachegrind", "", 1000, 1010)]);
 
     auto j = parseJSON(render(rep));
-    assert(j["schema_version"].integer == 1);
+    assert(j["schema_version"].integer == 2);
     assert(j["base"]["sha"].str == "base1");
     assert(j["head"]["pr"].integer == 7);
     assert(j["metrics"].array.length == 1);

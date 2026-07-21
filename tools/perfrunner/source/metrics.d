@@ -8,6 +8,7 @@ import std.regex : ctRegex, matchFirst;
 import std.process : execute;
 
 import cachegrind : instructions;
+import timetrace : stages;
 
 struct MetricDef
 {
@@ -15,6 +16,7 @@ struct MetricDef
     string label;
     string unit;
     string method;
+    string parent; // headline metric this row breaks down, empty for top-level rows
 }
 
 // Some initial metrics to measure will add more later
@@ -26,6 +28,8 @@ immutable MetricDef[] initials = [
     MetricDef("hello_binary_size",           "hello binary size",          "bytes", "stat"),
     MetricDef("hello_max_rss",               "peak RSS (compile hello.d)", "kb",    "time -v"),
     MetricDef("phobos_max_rss",              "peak RSS (compile Phobos)",  "kb",    "time -v"),
+    MetricDef("phobos_stage_frontend", "frontend (parse+sema)",     "us", "time-trace", "compile_phobos_instr"),
+    MetricDef("phobos_stage_backend",  "backend (inline+codegen)",  "us", "time-trace", "compile_phobos_instr"),
 ];
 
 // Measure every metric for one dmd binary. `tag` ("base"/"head")
@@ -34,7 +38,7 @@ long[string] measure(string dmd, string workload, string phobos, string tmp, str
 {
     auto stdPackage = buildPath(phobos, "std", "package.d");
     auto phobosFlags = ["-i=std", "-preview=dip1000"];
-    return [
+    long[string] m = [
         "compile_hello_debug_instr":   instructions(dmd, [], workload, tmp, tag ~ "-dbg"),
         "compile_hello_release_instr": instructions(dmd, ["-O", "-release"], workload, tmp, tag ~ "-rel"),
         "compile_phobos_instr":        instructions(dmd, phobosFlags, stdPackage, tmp, tag ~ "-phobos"),
@@ -43,6 +47,13 @@ long[string] measure(string dmd, string workload, string phobos, string tmp, str
         "hello_max_rss":               maxRss(dmd, [], workload, tmp, tag),
         "phobos_max_rss":              maxRss(dmd, phobosFlags, stdPackage, tmp, tag ~ "-phobos"),
     ];
+
+    // Stage breakdown of the Phobos compile. Zero on a base too old for
+    // -ftime-trace; the comment renders that side as n/a.
+    auto st = stages(dmd, phobosFlags, stdPackage, tmp, tag ~ "-phobos");
+    m["phobos_stage_frontend"] = st.get("stage_frontend_us", 0);
+    m["phobos_stage_backend"]  = st.get("stage_backend_us", 0);
+    return m;
 }
 
 // Byte size of `binary`

@@ -32,6 +32,30 @@ def fmt_delta(pct):
     return f"{sign}{value}%"
 
 
+def fmt_share(value, total):
+    if total <= 0:
+        return "n/a"
+    return f"{value / total * 100:.0f}%"
+
+
+def is_significant(m):
+    return abs(m["delta_pct"]) >= THRESHOLDS.get(m["method"], 0.1)
+
+
+# Stage rows (frontend/backend) shown as base%/head% shares of their group.
+def breakdown(children):
+    base_total = sum(c["base"] for c in children)
+    head_total = sum(c["head"] for c in children)
+    if head_total <= 0:
+        return []
+    return ["| ↳ {} | {} | {} | {} |".format(
+        c["label"],
+        fmt_share(c["base"], base_total),
+        fmt_share(c["head"], head_total),
+        fmt_delta(c["delta_pct"]),
+    ) for c in children]
+
+
 def render(results):
     lines = [
         MARKER,
@@ -40,13 +64,19 @@ def render(results):
         "| Metric | Base | PR | delta |",
         "|--------|------|----|-------|",
     ]
-    for m in results["metrics"]:
+    metrics = results["metrics"]
+    for m in metrics:
+        if m.get("parent"):
+            continue
         lines.append("| {} | {} | {} | {} |".format(
             m["label"],
             fmt_value(m["base"], m["unit"]),
             fmt_value(m["head"], m["unit"]),
             fmt_delta(m["delta_pct"]),
         ))
+        children = [c for c in metrics if c.get("parent") == m["id"]]
+        if children and is_significant(m):
+            lines += breakdown(children)
     return "\n".join(lines) + "\n"
 
 
@@ -89,8 +119,7 @@ def main():
         return
 
     significant = any(
-        abs(m["delta_pct"]) >= THRESHOLDS.get(m["method"], 0.1)
-        for m in results["metrics"]
+        is_significant(m) for m in results["metrics"] if not m.get("parent")
     )
     if not significant:
         print("all deltas within noise threshold, skipping comment")

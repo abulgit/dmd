@@ -55,7 +55,7 @@ int main(string[] args)
 
     MetricResult[] metrics;
     foreach (def; initials)
-        metrics ~= MetricResult(def.id, def.label, def.unit, def.method,
+        metrics ~= MetricResult(def.id, def.label, def.unit, def.method, def.parent,
             base[def.id], head[def.id]);
 
     auto rep = Report(baseSha, "merge-base", headSha, pr, os, hostDmd, metrics);
