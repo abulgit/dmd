@@ -30,6 +30,10 @@ immutable MetricDef[] initials = [
     MetricDef("phobos_max_rss",              "peak RSS (compile Phobos)",  "kb",    "time -v"),
     MetricDef("phobos_stage_frontend", "frontend (parse+sema)",     "us", "time-trace", "compile_phobos_instr"),
     MetricDef("phobos_stage_backend",  "backend (inline+codegen)",  "us", "time-trace", "compile_phobos_instr"),
+    MetricDef("phobos_stage_parse",    "parse",                     "us", "time-trace", "phobos_stage_frontend"),
+    MetricDef("phobos_stage_sema",     "semantic analysis",         "us", "time-trace", "phobos_stage_frontend"),
+    MetricDef("phobos_stage_inline",   "inlining",                  "us", "time-trace", "phobos_stage_backend"),
+    MetricDef("phobos_stage_codegen",  "code generation",           "us", "time-trace", "phobos_stage_backend"),
 ];
 
 // Measure every metric for one dmd binary. `tag` ("base"/"head")
@@ -53,6 +57,10 @@ long[string] measure(string dmd, string workload, string phobos, string tmp, str
     auto st = stages(dmd, phobosFlags, stdPackage, tmp, tag ~ "-phobos");
     m["phobos_stage_frontend"] = st.get("stage_frontend_us", 0);
     m["phobos_stage_backend"]  = st.get("stage_backend_us", 0);
+    m["phobos_stage_parse"]    = st.get("stage_parse_us", 0);
+    m["phobos_stage_sema"]     = st.get("stage_sema_us", 0);
+    m["phobos_stage_inline"]   = st.get("stage_inline_us", 0);
+    m["phobos_stage_codegen"]  = st.get("stage_codegen_us", 0);
     return m;
 }
 

@@ -42,18 +42,29 @@ def is_significant(m):
     return abs(m["delta_pct"]) >= THRESHOLDS.get(m["method"], 0.1)
 
 
-# Stage rows (frontend/backend) shown as base%/head% shares of their group.
+# Stage rows (frontend/backend) shown as base%/head% shares with pp delta.
 def breakdown(children):
     base_total = sum(c["base"] for c in children)
     head_total = sum(c["head"] for c in children)
     if head_total <= 0:
         return []
-    return ["| ↳ {} | {} | {} | {} |".format(
-        c["label"],
-        fmt_share(c["base"], base_total),
-        fmt_share(c["head"], head_total),
-        fmt_delta(c["delta_pct"]),
-    ) for c in children]
+    rows = []
+    for c in children:
+        base_pct = c["base"] / base_total * 100 if base_total > 0 else 0
+        head_pct = c["head"] / head_total * 100 if head_total > 0 else 0
+        pp = head_pct - base_pct
+        if abs(pp) < 0.5:
+            delta_str = "~0pp"
+        else:
+            sign = "+" if pp > 0 else ""
+            delta_str = f"{sign}{pp:.0f}pp"
+        rows.append("| ↳ {} | {} | {} | {} |".format(
+            c["label"],
+            fmt_share(c["base"], base_total),
+            fmt_share(c["head"], head_total),
+            delta_str,
+        ))
+    return rows
 
 
 def render(results):

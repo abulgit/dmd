@@ -1,6 +1,6 @@
 module timetrace;
 
-import std.algorithm : canFind;
+
 import std.file : readText;
 import std.json : parseJSON;
 import std.path : buildPath;
@@ -9,24 +9,33 @@ import std.process : execute;
 // The top-level -ftime-trace spans grouped into frontend/backend. These names
 // match main.d's generic phase spans; they don't overlap, so summing them
 // partitions the compile without double-counting the nested per-symbol events.
-private immutable string[] frontendSpans = ["Parsing", "Semantic analysis"];
-private immutable string[] backendSpans  = ["Inlining", "Code generation"];
-
 // Sum the duration (microseconds) of the top-level spans in each bucket.
+// Returns both coarse (frontend/backend) and fine (parse/sema/inline/codegen).
 long[string] parseStages(string trace)
 {
-    long frontend, backend;
+    long parse, sema, inline, codegen;
     foreach (e; parseJSON(trace)["traceEvents"].array)
     {
         if (e["ph"].str != "X")
             continue;
         auto name = e["name"].str;
-        if (frontendSpans.canFind(name))
-            frontend += e["dur"].integer;
-        else if (backendSpans.canFind(name))
-            backend += e["dur"].integer;
+        if (name == "Parsing")
+            parse += e["dur"].integer;
+        else if (name == "Semantic analysis")
+            sema += e["dur"].integer;
+        else if (name == "Inlining")
+            inline += e["dur"].integer;
+        else if (name == "Code generation")
+            codegen += e["dur"].integer;
     }
-    return ["stage_frontend_us": frontend, "stage_backend_us": backend];
+    return [
+        "stage_frontend_us": parse + sema,
+        "stage_backend_us":  inline + codegen,
+        "stage_parse_us":    parse,
+        "stage_sema_us":     sema,
+        "stage_inline_us":   inline,
+        "stage_codegen_us":  codegen,
+    ];
 }
 
 // Compile the workload with -ftime-trace and read the per-stage durations.
@@ -57,4 +66,8 @@ unittest
     auto s = parseStages(sample);
     assert(s["stage_frontend_us"] == 400);
     assert(s["stage_backend_us"] == 100);
+    assert(s["stage_parse_us"] == 100);
+    assert(s["stage_sema_us"] == 300);
+    assert(s["stage_inline_us"] == 20);
+    assert(s["stage_codegen_us"] == 80);
 }

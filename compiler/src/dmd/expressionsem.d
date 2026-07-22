@@ -15808,16 +15808,6 @@ Expression expressionSemantic(Expression e, Scope* sc)
     if (e.expressionSemanticDone)
         return e;
 
-    // TEMP: deliberate frontend slowdown to exercise the perf bot's stage
-    // breakdown. Remove before merging. Bump the count if the delta is too
-    // small to cross the threshold.
-    {
-        import core.volatile : volatileLoad, volatileStore;
-        __gshared uint sink;
-        foreach (i; 0 .. 50)
-            volatileStore(&sink, volatileLoad(&sink) + i);
-    }
-
     scope v = new ExpressionSemanticVisitor(sc);
     e.accept(v);
     return v.result;
