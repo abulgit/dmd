@@ -6,7 +6,7 @@ import std.json : JSONValue, parseJSON;
 import std.path : buildPath;
 import std.process : execute;
 
-// Ordered phase buckets we report. Frontend = parse..ctfe, backend = inline+codegen.
+// Phase buckets, in the order we report them.
 immutable string[] phaseIds = ["parse", "sema1", "sema2", "sema3", "ctfe", "inline", "codegen"];
 
 struct Trace
@@ -36,7 +36,7 @@ Trace collectTrace(string dmd, string[] dflags, string workload, string tmp, str
     return parseTrace(readText(tracePath));
 }
 
-// Map a trace event name to its phase bucket, or null to ignore it.
+// Map a trace event name to its phase bucket
 private string phaseOf(string name)
 {
     if (name.startsWith("Pars"))     return "parse";
@@ -52,7 +52,7 @@ private string phaseOf(string name)
     return null;
 }
 
-// Parse a chrome-trace JSON string into per-phase self-times.
+// Chrome-trace JSON string into per-phase self-times.
 Trace parseTrace(string json)
 {
     struct Ev { string name; long ts; long dur; }
@@ -64,8 +64,7 @@ Trace parseTrace(string json)
         evs ~= Ev(e["name"].str, e["ts"].integer, e["dur"].integer);
     }
 
-    // Reconstruct nesting (single-threaded, so intervals nest cleanly) and
-    // subtract each event's direct children to get its self-time.
+    // Reconstruct nesting and subtract each event's direct children to get its self-time.
     sort!((a, b) => a.ts != b.ts ? a.ts < b.ts : a.dur > b.dur)(evs);
     auto childUs = new long[evs.length];
     size_t[] stack;
@@ -99,7 +98,7 @@ unittest
 }`;
     auto t = parseTrace(sample);
     assert(t.phase("parse") == 100);
-    assert(t.phase("sema1") == 80); // 30 self of container + 50 of the function
+    assert(t.phase("sema1") == 80);
     assert(t.phase("codegen") == 40);
     assert(t.total == 220);
 }

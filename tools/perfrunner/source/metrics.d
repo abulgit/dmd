@@ -29,7 +29,6 @@ immutable MetricDef[] initials = [
     MetricDef("phobos_max_rss",              "peak RSS (compile Phobos)",  "kb",    "time -v"),
 ];
 
-// The flat metrics plus the informational -ftime-trace breakdowns.
 struct Measurement
 {
     long[string] metrics;

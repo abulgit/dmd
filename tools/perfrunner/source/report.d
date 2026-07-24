@@ -61,13 +61,11 @@ string render(Report rep)
     return root.toPrettyString();
 }
 
-// Base/head pair of self-times (microseconds). Percentages are derived later.
 private JSONValue pair(long base, long head)
 {
     return JSONValue(["base": JSONValue(base), "head": JSONValue(head)]);
 }
 
-// Serialise one workload's base/head -ftime-trace breakdown (raw self-times).
 private JSONValue traceJson(Trace b, Trace h)
 {
     JSONValue[string] phases;
