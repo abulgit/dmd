@@ -53,7 +53,6 @@ string render(Report rep)
         "runner": JSONValue(["os": JSONValue(rep.os), "host_dmd": JSONValue(rep.hostDmd)]),
         "metrics": JSONValue(metrics),
         "time_trace": JSONValue([
-            "note":   JSONValue("informational, wall-clock, non-gating"),
             "hello":  traceJson(rep.helloBase, rep.helloHead),
             "phobos": traceJson(rep.phobosBase, rep.phobosHead),
         ]),
@@ -76,11 +75,8 @@ private JSONValue traceJson(Trace b, Trace h)
         phases[id] = pair(b.phase(id), h.phase(id));
 
     return JSONValue([
-        "available": JSONValue(["base": JSONValue(b.available), "head": JSONValue(h.available)]),
-        "total_us":  pair(b.total, h.total),
-        "frontend":  pair(b.frontend, h.frontend),
-        "backend":   pair(b.backend, h.backend),
-        "phases":    JSONValue(phases),
+        "total_us": pair(b.total, h.total),
+        "phases":   JSONValue(phases),
     ]);
 }
 

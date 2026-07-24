@@ -9,20 +9,21 @@ import std.process : execute;
 // Ordered phase buckets we report. Frontend = parse..ctfe, backend = inline+codegen.
 immutable string[] phaseIds = ["parse", "sema1", "sema2", "sema3", "ctfe", "inline", "codegen"];
 
-// Per-phase self-time (microseconds) aggregated from one -ftime-trace run.
-// `available` is false when the compiler doesn't support -ftime-trace (old base).
 struct Trace
 {
-    bool available;
     long[string] selfUs;
 
     long phase(string id) const { return selfUs.get(id, 0); }
-    long frontend() const { return phase("parse") + phase("sema1") + phase("sema2") + phase("sema3") + phase("ctfe"); }
-    long backend() const { return phase("inline") + phase("codegen"); }
-    long total() const { return frontend + backend; }
+    long total() const
+    {
+        long sum;
+        foreach (id; phaseIds)
+            sum += phase(id);
+        return sum;
+    }
 }
 
-// Compile the workload with -ftime-trace and aggregate the trace into phases.
+// Compile the workload with -ftime-trace
 Trace collectTrace(string dmd, string[] dflags, string workload, string tmp, string tag)
 {
     auto obj = buildPath(tmp, tag ~ "-tt.o");
@@ -31,7 +32,7 @@ Trace collectTrace(string dmd, string[] dflags, string workload, string tmp, str
         ~ dflags ~ [workload, "-of=" ~ obj];
     auto r = execute(cmd);
     if (r.status != 0 || !exists(tracePath))
-        return Trace(false);
+        throw new Exception("-ftime-trace compile failed:\n" ~ r.output);
     return parseTrace(readText(tracePath));
 }
 
@@ -77,7 +78,7 @@ Trace parseTrace(string json)
         stack ~= i;
     }
 
-    Trace t = { available: true };
+    Trace t;
     foreach (i, e; evs)
         if (auto ph = phaseOf(e.name))
             t.selfUs[ph] += e.dur - childUs[i];
@@ -97,11 +98,8 @@ unittest
 ]
 }`;
     auto t = parseTrace(sample);
-    assert(t.available);
     assert(t.phase("parse") == 100);
     assert(t.phase("sema1") == 80); // 30 self of container + 50 of the function
     assert(t.phase("codegen") == 40);
-    assert(t.frontend == 180);
-    assert(t.backend == 40);
     assert(t.total == 220);
 }
