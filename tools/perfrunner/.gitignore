@@ -5,3 +5,6 @@ perfrunner.exe
 *.o
 *.obj
 results.json
+
+# The workload's dependency pin has to be tracked, the repo root ignores it.
+!workloads/vibed/dub.selections.json

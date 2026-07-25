@@ -98,6 +98,14 @@ jobs:
           build_with_profile head
           deactivate
 
+      # The vibe.d workload is pinned by dub.selections.json, so a cache hit
+      # keeps the package registry out of the loop on all but the first run.
+      - name: Cache vibe.d workload sources
+        uses: actions/cache@v4
+        with:
+          path: ~/.dub/packages
+          key: dub-${{ hashFiles('tools/perfrunner/workloads/vibed/dub.selections.json') }}
+
       - name: Measure
         run: |
           set -uexo pipefail
