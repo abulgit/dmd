@@ -826,10 +826,15 @@ void funcDeclarationSemantic(Scope* sc, FuncDeclaration funcdecl)
     if (auto id = parent.isInterfaceDeclaration())
     {
         funcdecl.storage_class |= STC.abstract_;
-        if (funcdecl.isCtorDeclaration() || funcdecl.isPostBlitDeclaration() || funcdecl.isDtorDeclaration() || funcdecl.isInvariantDeclaration() || funcdecl.isNewDeclaration() || funcdecl.isDelete())
+        const isSpecialFunc = funcdecl.isCtorDeclaration() || funcdecl.isPostBlitDeclaration() || funcdecl.isDtorDeclaration() || funcdecl.isInvariantDeclaration() || funcdecl.isNewDeclaration() || funcdecl.isDelete();
+        if (isSpecialFunc)
             .error(funcdecl.loc, "%s `%s` constructors, destructors, postblits, invariants, new and delete functions are not allowed in interface `%s`", funcdecl.kind, funcdecl.toPrettyChars, id.toErrMsg());
         if (funcdecl.fbody && funcdecl.isVirtual())
             .error(funcdecl.loc, "%s `%s` function body only allowed in `final` functions in interface `%s`", funcdecl.kind, funcdecl.toPrettyChars, id.toErrMsg());
+        // A final interface function has no vtable slot, so no class can supply its
+        // body. Only a foreign linkage can, from the other side.
+        if (!isSpecialFunc && !funcdecl.fbody && !funcdecl.isStatic() && funcdecl.isFinalFunc() && funcdecl.resolvedLinkage() == LINK.d)
+            .error(funcdecl.loc, "%s `%s` `final` function requires a body in interface `%s`", funcdecl.kind, funcdecl.toPrettyChars, id.toErrMsg());
     }
 
     if (UnionDeclaration ud = parent.isUnionDeclaration())
