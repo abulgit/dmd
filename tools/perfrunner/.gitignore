@@ -5,3 +5,6 @@ perfrunner.exe
 *.o
 *.obj
 results.json
+
+# This needs to be tracked, the repo root ignores it.
+!workloads/vibed/dub.selections.json
