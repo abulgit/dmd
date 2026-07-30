@@ -16,13 +16,13 @@ long parseInstructions(string cgout)
     throw new Exception("could not find 'summary:' line in cachegrind output");
 }
 
-// Compile the workload under cachegrind
+// Compile the workload under cachegrind. Only Ir is read, so the simulators stay off.
 long instructions(string dmd, string[] dflags, string workload, string tmp, string tag)
 {
     auto obj = buildPath(tmp, tag ~ ".o");
     auto cgOut = buildPath(tmp, tag ~ ".cgout");
-    auto cmd = ["valgrind", "--tool=cachegrind", "--cachegrind-out-file=" ~ cgOut,
-        dmd, "-c"] ~ dflags ~ [workload, "-of=" ~ obj];
+    auto cmd = ["valgrind", "--tool=cachegrind", "--cache-sim=no", "--branch-sim=no",
+        "--cachegrind-out-file=" ~ cgOut, dmd, "-c"] ~ dflags ~ [workload, "-of=" ~ obj];
     auto r = execute(cmd);
     if (r.status != 0)
         throw new Exception("cachegrind failed:\n" ~ r.output);
