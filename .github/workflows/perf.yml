@@ -77,10 +77,12 @@ jobs:
         run: |
           set -uexo pipefail
           source ~/dlang/*/activate
+          built=generated/$OS_NAME/release/$MODEL
+          profile="$RUNNER_TEMP/pgo/merged.data"
           BASE_SHA="${{ steps.refs.outputs.base }}"
+          mkdir -p "$RUNNER_TEMP/pgo"
 
-          # Check out a ref and build a plain dmd + phobos. The plain dmd only
-          # exists to build phobos, which the PGO training run needs.
+          # Check out a ref and build a plain dmd + phobos
           setup_ref() {
             local dir="$RUNNER_TEMP/$2/dmd"
             mkdir -p "$RUNNER_TEMP/$2"
@@ -91,25 +93,21 @@ jobs:
             ( cd "$dir/../phobos" && make -j$N MODEL=$MODEL )
           }
 
-          # Train a PGO profile on the ref's own code and rebuild it with that
-          # profile (release + LTO, see the dmd-pgo rule in build.d).
-          #
-          # Each side trains its own profile. A profile entry is keyed on a
-          # function's control flow, so reusing one side's profile for the
-          # other leaves every function the PR changed without profile data.
-          # That side is then optimized blind for exactly the code under test
-          # and looks slower for reasons unrelated to the change. The training
-          # input is the same test suite on both sides, so unchanged code still
-          # gets the same profile and the same binary.
-          pgo_ref() {
-            ( cd "$RUNNER_TEMP/$1/dmd" && generated/build HOST_DMD=$DMD MODEL=$MODEL dmd-pgo -j$N --force )
-          }
-
           setup_ref "${{ steps.refs.outputs.head }}" head
-          pgo_ref head
           if [ -n "$BASE_SHA" ]; then
             setup_ref "$BASE_SHA" base
-            pgo_ref base
+            train=base
+          else
+            train=head
+          fi
+
+          # dmd-pgo trains and rebuilds $train with the merged profile, the other ref just reuses it
+          ( cd "$RUNNER_TEMP/$train/dmd" && generated/build HOST_DMD=$DMD MODEL=$MODEL dmd-pgo -j$N --force )
+          cp "$RUNNER_TEMP/$train/dmd/$built/dmd_profdata/merged.data" "$profile"
+          if [ -n "$BASE_SHA" ]; then
+            ( cd "$RUNNER_TEMP/head/dmd" && generated/build HOST_DMD=$DMD MODEL=$MODEL \
+                ENABLE_RELEASE=1 ENABLE_LTO=1 \
+                DFLAGS="-fprofile-instr-use=$profile -wi" -j$N --force )
           fi
           deactivate
 
