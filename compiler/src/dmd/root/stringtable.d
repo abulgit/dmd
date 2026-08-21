@@ -291,7 +291,7 @@ private:
         {
             const(StringValue!T)* sv;
             auto vptr = table[i].vptr;
-            if (!vptr || table[i].hash == hash && (sv = getValue(vptr)).length == str.length && .memcmp(str.ptr, sv.toDchars(), str.length) == 0)
+            if (!vptr || table[i].hash == hash && (sv = getValue(vptr)).length == str.length && equalStrings(str, sv.toString()))
                 return i;
             i = (i + j) & (table.length - 1);
         }
@@ -312,6 +312,86 @@ private:
             table[findSlot(se.hash, sv.toString())] = se;
         }
         mem.xfree(otab.ptr);
+    }
+}
+
+/********************************
+ * Compare two strings of equal length for equality.
+ *
+ * Most lookups are identifiers and keywords of at most 8 bytes. For those a
+ * call into the C library's memcmp costs more instructions than the
+ * comparison itself, so they are compared inline with two overlapping word
+ * loads. Longer strings go out of line, which keeps `findSlot` small enough
+ * to stay inlined into its callers.
+ * Params:
+ *      a = first string
+ *      b = second string, same length as `a`
+ * Returns:
+ *      true if the contents are equal
+ */
+private bool equalStrings(scope const(char)[] a, scope const(char)[] b) @nogc nothrow pure @trusted
+{
+    const n = a.length;
+    if (n > 8)
+        return equalStringsLong(a, b);
+    if (n >= 4)
+        return load4(a[0 .. 4]) == load4(b[0 .. 4]) && load4(a[$ - 4 .. $]) == load4(b[$ - 4 .. $]);
+    if (n == 0)
+        return true;
+    return a[0] == b[0] && a[n - 1] == b[n - 1] && (n < 3 || a[1] == b[1]);
+}
+
+/// ditto, for strings longer than 8 bytes
+pragma(inline, false)
+private bool equalStringsLong(scope const(char)[] a, scope const(char)[] b) @nogc nothrow pure @trusted
+{
+    const n = a.length;
+    if (n <= 16)
+        return load8(a[0 .. 8]) == load8(b[0 .. 8]) && load8(a[$ - 8 .. $]) == load8(b[$ - 8 .. $]);
+    return memcmp(a.ptr, b.ptr, n) == 0;
+}
+
+// Word loads assembled byte by byte, so the code stays @safe; optimizing
+// compilers fuse each into a single load once the slice length is known.
+private uint load4(scope const(char)[] b) @nogc nothrow pure @safe
+{
+    return b[0] | b[1] << 8 | b[2] << 16 | b[3] << 24;
+}
+
+/// ditto
+private ulong load8(scope const(char)[] b) @nogc nothrow pure @safe
+{
+    return load4(b[0 .. 4]) | cast(ulong) load4(b[4 .. 8]) << 32;
+}
+
+nothrow unittest
+{
+    // every length takes a different path in equalStrings; make sure each one
+    // matches the stored string and rejects a string that differs in the
+    // first, the middle or the last byte
+    StringTable!(int) tab;
+    tab._init(10);
+    char[24] buf;
+    foreach (n; 0 .. 21)
+    {
+        foreach (i; 0 .. n)
+            buf[i] = cast(char)('a' + i);
+        tab.insert(buf[0 .. n], n);
+    }
+    foreach (n; 0 .. 21)
+    {
+        foreach (i; 0 .. n)
+            buf[i] = cast(char)('a' + i);
+        assert(tab.lookup(buf[0 .. n]).value == n);
+        foreach (pos; [0, n / 2, n - 1])
+        {
+            if (n == 0)
+                break;
+            const saved = buf[pos];
+            buf[pos] = '_';
+            assert(tab.lookup(buf[0 .. n]) is null);
+            buf[pos] = saved;
+        }
     }
 }
 
