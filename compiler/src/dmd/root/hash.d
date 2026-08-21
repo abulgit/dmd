@@ -19,9 +19,14 @@ nothrow:
 // https://github.com/aappleby/smhasher/
 //
 // The 64-bit variant consumes 8 bytes per round instead of the 4 bytes of
-// MurmurHash2, so it does roughly half the work on the identifier and type
-// mangling strings that dominate the compiler's hashing. The result is folded
-// down to 32 bits because that is what the string tables store per slot.
+// MurmurHash2, so it does roughly half the work on the long type mangling and
+// symbol name strings. The result is folded down to 32 bits because that is
+// what the string tables store per slot.
+//
+// The tail (the 0 .. 7 bytes left after the 8 byte rounds) deliberately
+// departs from the reference implementation: instead of one step per byte it
+// uses a constant number of overlapping loads. Most D identifiers are shorter
+// than 8 bytes, so for the identifier table the tail is the whole hash.
 uint calcHash(scope const(char)[] data) @nogc nothrow pure @safe
 {
     return calcHash(cast(const(ubyte)[])data);
@@ -39,17 +44,7 @@ uint calcHash(scope const(ubyte)[] data) @nogc nothrow pure @safe
     // Mix 8 bytes at a time into the hash
     while (data.length >= 8)
     {
-        // Assembled byte by byte so the result is endian independent and the
-        // code stays @safe; optimizing compilers fuse this into one load.
-        const b = data[0 .. 8];
-        ulong k = cast(ulong) b[0]
-                | cast(ulong) b[1] << 8
-                | cast(ulong) b[2] << 16
-                | cast(ulong) b[3] << 24
-                | cast(ulong) b[4] << 32
-                | cast(ulong) b[5] << 40
-                | cast(ulong) b[6] << 48
-                | cast(ulong) b[7] << 56;
+        ulong k = load8(data[0 .. 8]);
         k *= m;
         k ^= k >> r;
         k *= m;
@@ -58,32 +53,17 @@ uint calcHash(scope const(ubyte)[] data) @nogc nothrow pure @safe
         data = data[8 .. $];
     }
     // Handle the last few bytes of the input array
-    switch (data.length & 7)
+    if (data.length >= 4)
     {
-    case 7:
-        h ^= cast(ulong) data[6] << 48;
-        goto case;
-    case 6:
-        h ^= cast(ulong) data[5] << 40;
-        goto case;
-    case 5:
-        h ^= cast(ulong) data[4] << 32;
-        goto case;
-    case 4:
-        h ^= cast(ulong) data[3] << 24;
-        goto case;
-    case 3:
-        h ^= cast(ulong) data[2] << 16;
-        goto case;
-    case 2:
-        h ^= cast(ulong) data[1] << 8;
-        goto case;
-    case 1:
-        h ^= cast(ulong) data[0];
+        // first and last 4 bytes; they overlap when fewer than 8 remain
+        h ^= (cast(ulong) load4(data[0 .. 4]) << 32) | load4(data[$ - 4 .. $]);
         h *= m;
-        goto default;
-    default:
-        break;
+    }
+    else if (data.length)
+    {
+        // first, middle and last byte; some coincide for 1 or 2 bytes
+        h ^= (cast(ulong) data[0] << 16) | (cast(ulong) data[data.length >> 1] << 8) | data[data.length - 1];
+        h *= m;
     }
     // Do a few final mixes of the hash to ensure the last few
     // bytes are well-incorporated.
@@ -94,17 +74,37 @@ uint calcHash(scope const(ubyte)[] data) @nogc nothrow pure @safe
     return cast(uint) h ^ cast(uint)(h >> 32);
 }
 
+// Little endian loads assembled byte by byte, so the result is the same on
+// every host and the code stays @safe; optimizing compilers fuse each into a
+// single load once the slice length is known.
+private uint load4(scope const(ubyte)[] b) @nogc nothrow pure @safe
+{
+    return b[0] | b[1] << 8 | b[2] << 16 | b[3] << 24;
+}
+
+/// ditto
+private ulong load8(scope const(ubyte)[] b) @nogc nothrow pure @safe
+{
+    return load4(b[0 .. 4]) | cast(ulong) load4(b[4 .. 8]) << 32;
+}
+
 unittest
 {
     char[10] data = "0123456789";
-    assert(calcHash(data[0..$]) == 1_874_127_986);
-    assert(calcHash(data[1..$]) ==   403_704_370);
+    assert(calcHash(data[0..$]) == 692_409_444);
+    assert(calcHash(data[1..$]) == 1_096_716_255);
     assert(calcHash(data[2..$]) == 1_064_661_774);
-    assert(calcHash(data[3..$]) == 1_913_381_665);
-    // 8 and 16 byte inputs exercise the full-round path with no tail
+    assert(calcHash(data[3..$]) == 3_337_566_304);
+    // 8 and 16 bytes: full rounds, no tail; 1..3 and 4..7 bytes: each tail path
     assert(calcHash(data[0..8]) == 3_655_457_200);
     assert(calcHash("0123456789abcdef") == 34_301_661);
     assert(calcHash("") == 0);
+    assert(calcHash("a") == 4_283_311_127);
+    assert(calcHash("ab") == 3_443_246_331);
+    assert(calcHash("abc") == 1_305_305_146);
+    assert(calcHash("abcd") == 267_587_814);
+    assert(calcHash("abcdefg") == 2_657_271_624);
+    assert(calcHash("abcdefghijk") == 1_749_481_894);
 }
 
 // combine and mix two words (boost::hash_combine)
