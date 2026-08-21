@@ -18,13 +18,13 @@ nothrow:
 // in the public domain. The author hereby disclaims copyright to this source
 // code. https://github.com/aappleby/smhasher/
 //
-// Keys shorter than 8 bytes take the 32-bit MurmurHash2 path. About 80% of the
-// identifier and keyword tokens the lexer interns are that short, and for them
-// at most one 4 byte round with a 32-bit multiply is the cheapest thing there
-// is. Longer keys (type mangles, symbol names) take the 64-bit variant, which
-// consumes 8 bytes per round and so does roughly half the work on them. The
-// 64-bit result is folded down to 32 bits because that is what the string
-// tables store per slot.
+// Keys shorter than 8 bytes take the 32-bit MurmurHash2 path, inlined into the
+// caller. About 80% of the identifier and keyword tokens the lexer interns are
+// that short, and for them one 4 byte round with a 32-bit multiply by an
+// immediate is the cheapest thing there is. Longer keys (type mangles, symbol
+// names) take the 64-bit variant out of line; it consumes 8 bytes per round
+// and so does roughly half the work on them. Its result is folded down to
+// 32 bits because that is what the string tables store per slot.
 uint calcHash(scope const(char)[] data) @nogc nothrow pure @safe
 {
     return calcHash(cast(const(ubyte)[])data);
@@ -36,8 +36,7 @@ uint calcHash(scope const(ubyte)[] data) @nogc nothrow pure @safe
     return data.length < 8 ? hashShort(data) : hashLong(data);
 }
 
-// MurmurHash2 for inputs of 0 .. 7 bytes
-pragma(inline, true)
+// MurmurHash2, for inputs of 0 .. 7 bytes
 private uint hashShort(scope const(ubyte)[] data) @nogc nothrow pure @safe
 {
     // 'm' and 'r' are mixing constants generated offline.
@@ -46,14 +45,14 @@ private uint hashShort(scope const(ubyte)[] data) @nogc nothrow pure @safe
     enum int r = 24;
     // Initialize the hash to a 'random' value
     uint h = cast(uint) data.length;
-    // Mix 4 bytes into the hash
-    if (data.length >= 4)
+    // Mix 4 bytes at a time into the hash
+    while (data.length >= 4)
     {
-        uint k = load4(data[0 .. 4]);
+        uint k = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
         k *= m;
         k ^= k >> r;
         h = (h * m) ^ (k * m);
-        data = data[4 .. $];
+        data = data[4..$];
     }
     // Handle the last few bytes of the input array
     switch (data.length & 3)
@@ -79,15 +78,14 @@ private uint hashShort(scope const(ubyte)[] data) @nogc nothrow pure @safe
     return h;
 }
 
-// MurmurHash64A for inputs of 8 or more bytes, folded to 32 bits.
-// The tail (the 0 .. 7 bytes left after the 8 byte rounds) departs from the
-// reference implementation: instead of one step per byte it uses a constant
-// number of overlapping loads.
-pragma(inline, true)
+// MurmurHash64A, for inputs of 8 or more bytes, folded to 32 bits.
+// Kept out of line so that only the short path gets inlined into callers.
+pragma(inline, false)
 private uint hashLong(scope const(ubyte)[] data) @nogc nothrow pure @safe
 {
     enum ulong m = 0xc6a4_a793_5bd1_e995UL;
     enum int r = 47;
+    const whole = data;
     ulong h = cast(ulong) data.length * m;
     // Mix 8 bytes at a time into the hash
     do
@@ -100,17 +98,13 @@ private uint hashLong(scope const(ubyte)[] data) @nogc nothrow pure @safe
         h *= m;
         data = data[8 .. $];
     } while (data.length >= 8);
-    // Handle the last few bytes of the input array
-    if (data.length >= 4)
+    // Handle the last few bytes of the input array. Unlike the reference
+    // implementation, which takes them one byte at a time, mix in the last 8
+    // bytes as a whole; they overlap with what the final round already
+    // consumed, which is harmless for a hash and keeps this a single load.
+    if (data.length)
     {
-        // first and last 4 bytes; they overlap when fewer than 8 remain
-        h ^= (cast(ulong) load4(data[0 .. 4]) << 32) | load4(data[$ - 4 .. $]);
-        h *= m;
-    }
-    else if (data.length)
-    {
-        // first, middle and last byte; some coincide for 1 or 2 bytes
-        h ^= (cast(ulong) data[0] << 16) | (cast(ulong) data[data.length >> 1] << 8) | data[data.length - 1];
+        h ^= load8(whole[$ - 8 .. $]);
         h *= m;
     }
     // Do a few final mixes of the hash to ensure the last few
@@ -122,32 +116,32 @@ private uint hashLong(scope const(ubyte)[] data) @nogc nothrow pure @safe
     return cast(uint) h ^ cast(uint)(h >> 32);
 }
 
-// Little endian loads assembled byte by byte, so the result is the same on
-// every host and the code stays @safe; optimizing compilers fuse each into a
+// Little endian 8 byte load assembled byte by byte, so the result is the same
+// on every host and the code stays @safe; optimizing compilers fuse it into a
 // single load once the slice length is known.
-pragma(inline, true)
-private uint load4(scope const(ubyte)[] b) @nogc nothrow pure @safe
-{
-    return b[0] | b[1] << 8 | b[2] << 16 | b[3] << 24;
-}
-
-/// ditto
-pragma(inline, true)
 private ulong load8(scope const(ubyte)[] b) @nogc nothrow pure @safe
 {
-    return load4(b[0 .. 4]) | cast(ulong) load4(b[4 .. 8]) << 32;
+    return cast(ulong) b[0]
+         | cast(ulong) b[1] << 8
+         | cast(ulong) b[2] << 16
+         | cast(ulong) b[3] << 24
+         | cast(ulong) b[4] << 32
+         | cast(ulong) b[5] << 40
+         | cast(ulong) b[6] << 48
+         | cast(ulong) b[7] << 56;
 }
 
 unittest
 {
     char[10] data = "0123456789";
-    // 8 bytes and longer: 64-bit rounds
-    assert(calcHash(data[0..$]) == 692_409_444);
-    assert(calcHash(data[1..$]) == 1_096_716_255);
+    // 8 bytes and longer: 64-bit rounds, last 8 bytes as the tail
+    assert(calcHash(data[0..$]) == 3_371_045_939);
+    assert(calcHash(data[1..$]) == 2_024_886_120);
     assert(calcHash(data[2..$]) == 1_064_661_774);
     assert(calcHash(data[0..8]) == 3_655_457_200);
     assert(calcHash("0123456789abcdef") == 34_301_661);
-    assert(calcHash("abcdefghijk") == 1_749_481_894);
+    assert(calcHash("abcdefghijk") == 1_979_916_221);
+    assert(calcHash("0123456789abcdefg") == 3_926_020_247);
     // shorter than 8 bytes: identical to plain MurmurHash2
     assert(calcHash(data[3..$]) == 3_631_432_225);
     assert(calcHash("") == 0);
