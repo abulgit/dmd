@@ -101,7 +101,11 @@ private Value* dmd_aaGet(AA** paa, Key key) pure nothrow
     e.value = null;
     *pe = e;
     //printf("length = %d, nodes = %d\n", (*paa)->b_length, nodes);
-    if (nodes > (*paa).b_length * 2)
+    // Rehash at a load factor of 1.0 rather than 2.0. Scope lookups walk the
+    // enclosing-scope chain and miss in most tables along the way; for a miss the
+    // expected number of chained nodes visited equals the load factor, so a
+    // lower bound halves the pointer chasing on that path.
+    if (nodes > (*paa).b_length)
     {
         //printf("rehash\n");
         dmd_aaRehash(paa);
@@ -234,10 +238,9 @@ private void dmd_aaRehash(AA** paa) pure nothrow
         if (aa)
         {
             size_t len = aa.b_length;
-            if (len == 4)
-                len = 32;
-            else
-                len *= 4;
+            // Grow 4 -> 16 -> 64 -> ...; the first step used to jump straight
+            // to 32, which is oversized for the many 5..16 entry scopes.
+            len *= 4;
             aaA** newb = cast(aaA**)mem.xmalloc(aaA.sizeof * len);
             memset(newb, 0, len * (aaA*).sizeof);
             for (size_t k = 0; k < aa.b_length; k++)
