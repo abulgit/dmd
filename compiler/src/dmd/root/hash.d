@@ -14,63 +14,81 @@ module dmd.root.hash;
 nothrow:
 @safe:
 
-// MurmurHash2 was written by Austin Appleby, and is placed in the public
-// domain. The author hereby disclaims copyright to this source code.
-// https://github.com/aappleby/smhasher/
 uint calcHash(scope const(char)[] data) @nogc nothrow pure @safe
 {
     return calcHash(cast(const(ubyte)[])data);
 }
 
-/// ditto
-uint calcHash(scope const(ubyte)[] data) @nogc nothrow pure @safe
+/// Multiplicative mixing over 4/8-byte chunks. Much cheaper per byte than
+/// the per-4-byte MurmurHash2 loop used before: typical identifiers
+/// (<= 16 bytes) take two multiplies plus the final avalanche. The tail
+/// chunk overlaps the previous one instead of being processed bytewise.
+uint calcHash(scope const(ubyte)[] data) @nogc nothrow pure @trusted
 {
-    // 'm' and 'r' are mixing constants generated offline.
-    // They're not really 'magic', they just happen to work well.
-    enum uint m = 0x5bd1e995;
-    enum int r = 24;
-    // Initialize the hash to a 'random' value
-    uint h = cast(uint) data.length;
-    // Mix 4 bytes at a time into the hash
-    while (data.length >= 4)
+    // odd 64-bit mixing constants (golden ratio / xxhash primes)
+    enum ulong m1 = 0x9E3779B97F4A7C15;
+    enum ulong m2 = 0xC2B2AE3D27D4EB4F;
+
+    const len = data.length;
+    const p = data.ptr;
+    // spread the length over the whole word so it cannot cancel out
+    // against the first data byte in the short-string paths below
+    ulong h = len * m2;
+    if (len >= 8)
     {
-        uint k = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
-        k *= m;
-        k ^= k >> r;
-        h = (h * m) ^ (k * m);
-        data = data[4..$];
+        size_t i = 0;
+        for (; i + 8 < len; i += 8)
+            h = (h ^ load8(p + i)) * m1;
+        h = (h ^ load8(p + len - 8)) * m1; // final chunk, overlaps when len % 8 != 0
     }
-    // Handle the last few bytes of the input array
-    switch (data.length & 3)
+    else if (len >= 4)
     {
-    case 3:
-        h ^= data[2] << 16;
-        goto case;
-    case 2:
-        h ^= data[1] << 8;
-        goto case;
-    case 1:
-        h ^= data[0];
-        h *= m;
-        goto default;
-    default:
-        break;
+        // two overlapping 4-byte reads cover the whole string
+        const ulong k = load4(p) | (cast(ulong)load4(p + len - 4) << 32);
+        h = (h ^ k) * m1;
     }
-    // Do a few final mixes of the hash to ensure the last few
-    // bytes are well-incorporated.
-    h ^= h >> 13;
-    h *= m;
-    h ^= h >> 15;
-    return h;
+    else if (len > 0)
+    {
+        const uint k = p[0] | (p[len >> 1] << 8) | (p[len - 1] << 16);
+        h = (h ^ k) * m1;
+    }
+    // final avalanche; the table index uses the low bits, so fold the
+    // well-mixed high bits down
+    h ^= h >> 32;
+    h *= m2;
+    h ^= h >> 29;
+    return cast(uint)h;
+}
+
+ulong load8(scope const(ubyte)* p) @nogc nothrow pure @trusted
+{
+    ulong v;
+    (cast(ubyte*)&v)[0 .. 8] = p[0 .. 8];
+    return v;
+}
+
+uint load4(scope const(ubyte)* p) @nogc nothrow pure @trusted
+{
+    uint v;
+    (cast(ubyte*)&v)[0 .. 4] = p[0 .. 4];
+    return v;
 }
 
 unittest
 {
     char[10] data = "0123456789";
-    assert(calcHash(data[0..$]) ==   439_272_720);
-    assert(calcHash(data[1..$]) == 3_704_291_687);
-    assert(calcHash(data[2..$]) == 2_125_368_748);
-    assert(calcHash(data[3..$]) == 3_631_432_225);
+    // equal content, different memory locations hash equally
+    char[10] copy = data;
+    assert(calcHash(data[0 .. $]) == calcHash(copy[0 .. $]));
+    // sample strings all hash differently
+    static immutable string[] samples = [
+        "", "a", "b", "ab", "ba", "abc", "abcd", "abcde", "abcdef",
+        "abcdefg", "abcdefgh", "abcdefghi", "abcdefghij", "foo", "bar",
+        "foreach", "foreach_reverse", "0123456789", "1234567890",
+    ];
+    foreach (i, s1; samples)
+        foreach (s2; samples[i + 1 .. $])
+            assert(calcHash(s1) != calcHash(s2));
 }
 
 // combine and mix two words (boost::hash_combine)

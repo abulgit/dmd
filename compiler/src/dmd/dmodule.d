@@ -788,6 +788,16 @@ extern (C++) final class Module : Package
 
             members = p.parseModuleContent();
             numlines = p.linnum;
+
+            debug (AST_LAYOUT)
+            {
+                static if (is(AST == ASTCodegen))
+                {
+                    import core.stdc.stdlib : getenv;
+                    if (members && getenv("DMD_AST_LAYOUT"))
+                        astLayoutWalk(this);
+                }
+            }
         }
 
         /* The symbol table into which the module is to be inserted.
@@ -1250,4 +1260,112 @@ private const(char)[] processSource (const(ubyte)[] src, Module mod)
     }
 
     return buf;
+}
+
+debug (AST_LAYOUT)
+{
+    import dmd.visitor : SemanticTimeTransitiveVisitor;
+    import dmd.visitor.parsetime : ParseTimeVisitor;
+    import core.stdc.stdio : FILE, fopen, fwrite, fprintf, fclose, stderr;
+    import core.stdc.stdlib : getenv, atexit;
+
+    private struct ALStats
+    {
+        ulong n, sumSizes;
+        ulong fwd, back, same;
+        ulong[48] fwdLog, backLog;   // log2 histogram of jump distances
+        size_t prev;
+        size_t minA = size_t.max, maxA;
+        FILE* dump;
+    }
+    private __gshared ALStats alStats;
+    private __gshared bool alReg;
+
+    private extern (C) void alReport() nothrow @nogc
+    {
+        auto s = &alStats;
+        fprintf(stderr, "AST_LAYOUT nodes=%llu sumSizes=%llu span=%llu fwd=%llu back=%llu same=%llu\n",
+            s.n, s.sumSizes, cast(ulong)(s.maxA - s.minA), s.fwd, s.back, s.same);
+        fprintf(stderr, "AST_LAYOUT fwdLog2:");
+        foreach (i, c; s.fwdLog) if (c) fprintf(stderr, " %d:%llu", cast(int)i, c);
+        fprintf(stderr, "\nAST_LAYOUT backLog2:");
+        foreach (i, c; s.backLog) if (c) fprintf(stderr, " %d:%llu", cast(int)i, c);
+        fprintf(stderr, "\n");
+        if (s.dump) fclose(s.dump);
+    }
+
+    private void alRecord(void* p, uint sz) nothrow @nogc
+    {
+        auto s = &alStats;
+        const a = cast(size_t)p;
+        if (s.n)
+        {
+            if (a > s.prev)
+            {
+                const d = a - s.prev;
+                ++s.fwd;
+                uint b = 0; { size_t t = d; while (t >>= 1) ++b; }
+                ++s.fwdLog[b < 48 ? b : 47];
+            }
+            else if (a < s.prev)
+            {
+                const d = s.prev - a;
+                ++s.back;
+                uint b = 0; { size_t t = d; while (t >>= 1) ++b; }
+                ++s.backLog[b < 48 ? b : 47];
+            }
+            else
+                ++s.same;
+        }
+        s.prev = a;
+        ++s.n;
+        s.sumSizes += sz;
+        if (a < s.minA) s.minA = a;
+        if (a > s.maxA) s.maxA = a;
+        if (s.dump)
+        {
+            size_t[2] rec = [a, sz];
+            fwrite(rec.ptr, rec[0].sizeof, 2, s.dump);
+        }
+    }
+
+    private template ALFirstParam(alias f)
+    {
+        static if (is(typeof(f) Q == function))
+            alias ALFirstParam = Q[0];
+    }
+
+    private extern (C++) final class ASTLayoutVisitor : SemanticTimeTransitiveVisitor
+    {
+        alias visit = SemanticTimeTransitiveVisitor.visit;
+
+        static foreach (overload; __traits(getOverloads, ParseTimeVisitor!ASTCodegen, "visit"))
+        {
+            override void visit(ALFirstParam!overload n)
+            {
+                alRecord(cast(void*)n, __traits(classInstanceSize, ALFirstParam!overload));
+                super.visit(n);
+            }
+        }
+    }
+
+    private void astLayoutWalk(Module m) nothrow
+    {
+        if (!alReg)
+        {
+            alReg = true;
+            atexit(&alReport);
+            if (auto path = getenv("DMD_AST_LAYOUT_DUMP"))
+                alStats.dump = fopen(path, "wb");
+        }
+        try
+        {
+            scope v = new ASTLayoutVisitor();
+            if (m.members)
+                foreach (sym; *m.members)
+                    if (sym)
+                        sym.accept(v);
+        }
+        catch (Exception e) {}
+    }
 }

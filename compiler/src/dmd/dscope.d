@@ -138,6 +138,25 @@ private struct Previews
     }
 }
 
+/// Mask of the `bitFields` flags that `Scope.push` keeps; the others are reset.
+private enum uint persistentFlagMask = ()
+{
+    Scope s;
+    s.contract = Contract.ensure;   // all bits of the multi-bit field
+    s.debug_ = true;
+    s.ctfe = true;
+    s.traitsCompiles = true;
+    s.inTemplateConstraint = true;
+    s.noAccessCheck = true;
+    s.ignoresymbolvisibility = true;
+    s.inCfile = true;
+    s.ctfeBlock = true;
+    s.knownACompileTimeOnlyContext = true;
+    s.inIsDisabledTrait = true;
+    s.deferSemantic3InCompilerHook = true;
+    return s.bitFields;
+}();
+
 extern (C++) struct Scope
 {
     Scope* enclosing;               /// enclosing Scope
@@ -259,22 +278,11 @@ extern (C++) struct Scope
         s.nofree = false;
         s.ctorflow.fieldinit = ctorflow.fieldinit.arraydup;
 
-        // Only keep persistent flags
-        s.resetAllFlags();
-        s.contract = this.contract;
-        s.debug_ = this.debug_;
-        s.ctfe = this.ctfe;
-        s.traitsCompiles = this.traitsCompiles;
-        s.inTemplateConstraint = this.inTemplateConstraint;
-        s.noAccessCheck = this.noAccessCheck;
-        s.ignoresymbolvisibility = this.ignoresymbolvisibility;
-        s.inCfile = this.inCfile;
-        s.ctfeBlock = this.ctfeBlock;
-        s.previews = this.previews;
+        // Only keep persistent flags; the persistent bits all live in
+        // `bitFields`, so one masked copy replaces setting them one by one.
+        // `previews` was already carried over by the struct copy above.
+        s.bitFields = this.bitFields & persistentFlagMask;
         s.lastdc = null;
-        s.knownACompileTimeOnlyContext = this.knownACompileTimeOnlyContext;
-        s.inIsDisabledTrait = this.inIsDisabledTrait;
-        s.deferSemantic3InCompilerHook = this.deferSemantic3InCompilerHook;
         assert(&this != s);
         return s;
     }

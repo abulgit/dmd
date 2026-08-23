@@ -1725,6 +1725,16 @@ class Lexer
         uint v = ~0; // dead assignment, needed to suppress warning
         p++;
         stringbuffer.setsize(0);
+        // Batch decoded bytes locally: one writestring per chunk is much
+        // cheaper than one writeByte call per byte for the big hex string
+        // tables in the wild.
+        char[128] chunk = void;
+        size_t nchunk = 0;
+        void flushChunk()
+        {
+            stringbuffer.writestring(chunk[0 .. nchunk]);
+            nchunk = 0;
+        }
         while (1)
         {
             dchar c = *p++;
@@ -1745,6 +1755,7 @@ class Lexer
                 continue;
             case 0:
             case 0x1A:
+                flushChunk();
                 error("unterminated string constant starting at %s", start.toChars());
                 t.setString(null);
                 // decrement `p`, because it needs to point to the next token (the 0 or 0x1A character is the TOK.endOfFile token).
@@ -1754,8 +1765,11 @@ class Lexer
                 if (n & 1)
                 {
                     error("odd number (%d) of hex characters in hex string", n);
-                    stringbuffer.writeByte(cast(char)v);
+                    if (nchunk == chunk.length)
+                        flushChunk();
+                    chunk[nchunk++] = cast(char)v;
                 }
+                flushChunk();
                 t.setString(stringbuffer[]);
                 stringPostfix(t);
                 return TOK.hexadecimalString;
@@ -1774,14 +1788,22 @@ class Lexer
                     if (u == PS || u == LS)
                         endOfLine();
                     else
+                    {
+                        flushChunk();
                         error("non-hex character \\u%04x in hex string", u);
+                    }
                 }
                 else
+                {
+                    flushChunk();
                     error("non-hex character '%c' in hex string", c);
+                }
                 if (n & 1)
                 {
                     v = (v << 4) | c;
-                    stringbuffer.writeByte(cast(char)v);
+                    if (nchunk == chunk.length)
+                        flushChunk();
+                    chunk[nchunk++] = cast(char)v;
                 }
                 else
                     v = c;
@@ -2130,6 +2152,24 @@ class Lexer
         stringbuffer.setsize(0);
         while (1)
         {
+            // Fast path: bulk-append maximal runs of ordinary characters
+            // instead of one writeByte call per character.
+            {
+                auto q = p;
+                while (true)
+                {
+                    const ch = *q;
+                    if (ch == '\\' || ch == '"' || ch == '\'' || ch == '$' ||
+                        ch == '\r' || ch == '\n' || ch == 0 || ch == 0x1A || ch >= 0x80)
+                        break;
+                    ++q;
+                }
+                if (q > p)
+                {
+                    stringbuffer.writestring(p[0 .. q - p]);
+                    p = q;
+                }
+            }
             dchar c = *p++;
             dchar c2;
             switch (c)

@@ -2446,7 +2446,29 @@ extern (C++) final class Parameter : ASTNode
     extern (D) static int _foreach(Parameters* parameters, scope ForeachDg dg)
     {
         assert(dg !is null);
-        return _foreach(parameters, (_oidx, _oparam, idx, param) => dg(idx, param));
+        if (parameters is null)
+            return 0;
+
+        size_t eidx;
+        foreach (oidx; 0 .. parameters.length)
+        {
+            Parameter oparam = (*parameters)[oidx];
+            if (oparam is null)
+                continue;
+            // fast path for a plain parameter, which is the common case;
+            // it avoids wrapping `dg` in a second delegate and recursing
+            if (!oparam.type.isTypeTuple())
+            {
+                if (auto r = dg(eidx, oparam))
+                    return r;
+                ++eidx;
+                continue;
+            }
+            if (auto r = _foreachImpl((_oidx, _oparam, idx, param) => dg(idx, param),
+                    oidx, oparam, eidx, /* eparam */ oparam))
+                return r;
+        }
+        return 0;
     }
 
     /// Ditto
@@ -2461,6 +2483,16 @@ extern (C++) final class Parameter : ASTNode
         foreach (oidx; 0 .. parameters.length)
         {
             Parameter oparam = (*parameters)[oidx];
+            if (oparam is null)
+                continue;
+            // fast path for a plain parameter, see above
+            if (!oparam.type.isTypeTuple())
+            {
+                if (auto r = dg(oidx, oparam, eidx, oparam))
+                    return r;
+                ++eidx;
+                continue;
+            }
             if (auto r = _foreachImpl(dg, oidx, oparam, eidx, /* eparam */ oparam))
                 return r;
         }

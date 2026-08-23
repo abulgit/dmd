@@ -43,6 +43,56 @@ unittest
 private enum loadFactorNumerator = 8;
 private enum loadFactorDenominator = 10;        // for a load factor of 0.8
 
+debug (ST_STATS)
+{
+    import core.stdc.stdio : fprintf, stderr;
+    import core.stdc.stdlib : atexit;
+    private __gshared ulong st_findCalls, st_probes, st_hashEq, st_falseEq, st_grows;
+    private __gshared ulong st_lookups, st_updates, st_inserts, st_hashedBytes, st_hashedCalls;
+    private __gshared ulong[33] st_lenHist;
+    private __gshared bool st_reg;
+    private extern (C) void st_report() nothrow @nogc
+    {
+        fprintf(stderr, "ST_STATS findCalls=%llu probes=%llu avgProbe=%.4f extraProbes=%llu hashEq=%llu falseEq=%llu grows=%llu\n",
+            st_findCalls, st_probes, st_findCalls ? cast(double)st_probes / st_findCalls : 0.0,
+            st_probes - st_findCalls, st_hashEq, st_falseEq, st_grows);
+        fprintf(stderr, "ST_STATS lookups=%llu updates=%llu inserts=%llu hashedCalls=%llu hashedBytes=%llu avgLen=%.2f\n",
+            st_lookups, st_updates, st_inserts, st_hashedCalls, st_hashedBytes,
+            st_hashedCalls ? cast(double)st_hashedBytes / st_hashedCalls : 0.0);
+        fprintf(stderr, "ST_STATS lenHist:");
+        foreach (i, c; st_lenHist)
+            if (c) fprintf(stderr, " %d:%llu", cast(int)i, c);
+        fprintf(stderr, "\n");
+    }
+}
+
+/*
+ * Equality of two byte sequences of the same length. The strings compared
+ * here are mostly short identifiers, where the overhead of a libc memcmp
+ * call dominates, so compare word-sized overlapping chunks inline instead.
+ */
+private bool smallEquals(scope const(char)* a, scope const(char)* b, size_t len) @nogc nothrow pure @trusted
+{
+    import dmd.root.hash : load4, load8;
+    const pa = cast(const(ubyte)*)a;
+    const pb = cast(const(ubyte)*)b;
+    if (len >= 8)
+    {
+        size_t i = 0;
+        for (; i + 8 < len; i += 8)
+            if (load8(pa + i) != load8(pb + i))
+                return false;
+        return load8(pa + len - 8) == load8(pb + len - 8);
+    }
+    if (len >= 4)
+        return load4(pa) == load4(pb) && load4(pa + len - 4) == load4(pb + len - 4);
+    if (len == 0)
+        return true;
+    if (pa[0] != pb[0])
+        return false;
+    return pa[len >> 1] == pb[len >> 1] && pa[len - 1] == pb[len - 1];
+}
+
 private struct StringEntry
 {
     uint hash;
@@ -96,6 +146,10 @@ private:
 public:
     void _init(size_t size = 0) nothrow pure
     {
+        debug (ST_STATS)
+        {
+            if (!st_reg) { st_reg = true; atexit(&st_report); }
+        }
         size = nextpow2((size * loadFactorDenominator) / loadFactorNumerator);
         if (size < 32)
             size = 32;
@@ -131,6 +185,7 @@ public:
     */
     inout(StringValue!T)* lookup(scope const(char)[] str) inout @nogc nothrow pure
     {
+        debug (ST_STATS) ++st_lookups;
         const(size_t) hash = calcHash(str);
         const(size_t) i = findSlot(hash, str);
         // printf("lookup %.*s %p\n", cast(int)str.length, str.ptr, table[i].value ?: null);
@@ -159,6 +214,7 @@ public:
     */
     StringValue!(T)* insert(scope const(char)[] str, T value) nothrow pure
     {
+        debug (ST_STATS) ++st_inserts;
         const(size_t) hash = calcHash(str);
         size_t i = findSlot(hash, str);
         if (table[i].vptr)
@@ -182,6 +238,7 @@ public:
 
     StringValue!(T)* update(scope const(char)[] str) nothrow pure
     {
+        debug (ST_STATS) ++st_updates;
         const(size_t) hash = calcHash(str);
         size_t i = findSlot(hash, str);
         if (!table[i].vptr)
@@ -285,20 +342,36 @@ private:
 
     size_t findSlot(hash_t hash, scope const(char)[] str) const @nogc nothrow pure
     {
+        debug (ST_STATS)
+        {
+            ++st_findCalls;
+            st_hashedCalls = st_hashedCalls + 1;
+            st_hashedBytes += str.length;
+            ++st_lenHist[str.length < 32 ? str.length : 32];
+        }
         // quadratic probing using triangular numbers
         // https://stackoverflow.com/questions/2348187/moving-from-linear-probing-to-quadratic-probing-hash-collisons/2349774#2349774
         for (size_t i = hash & (table.length - 1), j = 1;; ++j)
         {
-            const(StringValue!T)* sv;
-            auto vptr = table[i].vptr;
-            if (!vptr || table[i].hash == hash && (sv = getValue(vptr)).length == str.length && .memcmp(str.ptr, sv.toDchars(), str.length) == 0)
+            debug (ST_STATS) ++st_probes;
+            const vptr = table[i].vptr;
+            if (!vptr)
                 return i;
+            if (table[i].hash == hash)
+            {
+                debug (ST_STATS) ++st_hashEq;
+                const sv = getValue(vptr);
+                if (sv.length == str.length && smallEquals(str.ptr, sv.toDchars(), str.length))
+                    return i;
+                debug (ST_STATS) ++st_falseEq;
+            }
             i = (i + j) & (table.length - 1);
         }
     }
 
     void grow() nothrow pure
     {
+        debug (ST_STATS) { ++st_grows; fprintf(stderr, "ST_STATS grow %llu -> %llu (count=%llu)\n", cast(ulong)table.length, cast(ulong)(table.length*2), cast(ulong)count); }
         const odim = table.length;
         auto otab = table;
         const ndim = table.length * 2;

@@ -8,7 +8,6 @@
  * Documentation:  https://dlang.org/phobos/dmd_root_aav.html
  * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/compiler/src/dmd/root/aav.d
  */
-
 module dmd.root.aav;
 
 import core.stdc.string;
@@ -18,8 +17,18 @@ nothrow:
 
 private size_t hash(size_t a) pure nothrow @nogc @safe
 {
-    a ^= (a >> 20) ^ (a >> 12);
-    return a ^ (a >> 7) ^ (a >> 4);
+    // multiplicative (Fibonacci) hashing: one multiply pushes the entropy
+    // into the high bits, folded back down for masking with the table size
+    static if (size_t.sizeof == 8)
+    {
+        a *= 0x9E3779B97F4A7C15UL;
+        return a ^ (a >> 32);
+    }
+    else
+    {
+        a *= 0x9E3779B9U;
+        return a ^ (a >> 16);
+    }
 }
 
 private struct KeyValueTemplate(K,V)
@@ -33,22 +42,15 @@ alias Value = void*;
 
 alias KeyValue = KeyValueTemplate!(Key, Value);
 
-private struct aaA
-{
-private:
-    aaA* next;
-    KeyValue keyValue;
-    alias keyValue this;
-}
-
 private struct AA
 {
 private:
-    aaA** b;
-    size_t b_length;
-    size_t nodes; // total number of aaA nodes
-    aaA*[4] binit; // initial value of b[]
-    aaA aafirst; // a lot of these AA's have only one entry
+    KeyValue* slots;   // power-of-2 sized open-addressing table; empty slots have a null key
+    size_t mask;       // number of slots - 1
+    size_t nodes;      // number of used slots, excluding the out-of-band null key
+    Value nullValue;   // the null key cannot live in the table, store it out of band
+    bool hasNull;
+    KeyValue[4] sinit; // initial table, spares tiny AAs a second allocation
 }
 
 /****************************************************
@@ -56,57 +58,58 @@ private:
  */
 private size_t dmd_aaLen(const AA* aa) pure nothrow @nogc @safe
 {
-    return aa ? aa.nodes : 0;
+    return aa ? aa.nodes + (aa.hasNull ? 1 : 0) : 0;
 }
 
 /*************************************************
  * Get pointer to value in associative array indexed by key.
  * Add entry for key if it is not already there, returning a pointer to a null Value.
  * Create the associative array if it does not already exist.
+ *
+ * The returned pointer is only valid until the next insertion.
  */
 private Value* dmd_aaGet(AA** paa, Key key) pure nothrow
 {
-    //printf("paa = %p\n", paa);
     if (!*paa)
     {
         AA* a = cast(AA*)mem.xmalloc(AA.sizeof);
-        a.b = cast(aaA**)a.binit;
-        a.b_length = 4;
+        a.slots = a.sinit.ptr;
+        a.mask = a.sinit.length - 1;
         a.nodes = 0;
-        a.binit[0] = null;
-        a.binit[1] = null;
-        a.binit[2] = null;
-        a.binit[3] = null;
+        a.nullValue = null;
+        a.hasNull = false;
+        foreach (ref kv; a.sinit)
+        {
+            kv.key = null;
+            kv.value = null;
+        }
         *paa = a;
-        assert((*paa).b_length == 4);
     }
-    //printf("paa = %p, *paa = %p\n", paa, *paa);
-    assert((*paa).b_length);
-    size_t i = hash(cast(size_t)key) & ((*paa).b_length - 1);
-    aaA** pe = &(*paa).b[i];
-    aaA* e;
-    while ((e = *pe) !is null)
+    AA* aa = *paa;
+    if (!key)
     {
-        if (key == e.key)
-            return &e.value;
-        pe = &e.next;
+        aa.hasNull = true;
+        return &aa.nullValue;
     }
-    // Not found, create new elem
-    //printf("create new one\n");
-    size_t nodes = ++(*paa).nodes;
-    e = (nodes != 1) ? cast(aaA*)mem.xmalloc(aaA.sizeof) : &(*paa).aafirst;
-    //e = new aaA();
-    e.next = null;
-    e.key = key;
-    e.value = null;
-    *pe = e;
-    //printf("length = %d, nodes = %d\n", (*paa)->b_length, nodes);
-    if (nodes > (*paa).b_length * 2)
+    // grow before inserting so the returned pointer stays valid until the
+    // next insertion
+    if ((aa.nodes + 1) * 4 > (aa.mask + 1) * 3)
+        dmd_aaRehash(aa);
+    size_t i = hash(cast(size_t)key) & aa.mask;
+    while (true)
     {
-        //printf("rehash\n");
-        dmd_aaRehash(paa);
+        KeyValue* kv = aa.slots + i;
+        if (kv.key == key)
+            return &kv.value;
+        if (!kv.key)
+        {
+            aa.nodes++;
+            kv.key = key;
+            kv.value = null;
+            return &kv.value;
+        }
+        i = (i + 1) & aa.mask;
     }
-    return &e.value;
 }
 
 /*************************************************
@@ -115,21 +118,20 @@ private Value* dmd_aaGet(AA** paa, Key key) pure nothrow
  */
 private Value dmd_aaGetRvalue(AA* aa, Key key) pure nothrow @nogc
 {
-    //printf("_aaGetRvalue(key = %p)\n", key);
-    if (aa)
+    if (!aa)
+        return null;
+    if (!key)
+        return aa.hasNull ? aa.nullValue : null;
+    size_t i = hash(cast(size_t)key) & aa.mask;
+    while (true)
     {
-        size_t i;
-        size_t len = aa.b_length;
-        i = hash(cast(size_t)key) & (len - 1);
-        aaA* e = aa.b[i];
-        while (e)
-        {
-            if (key == e.key)
-                return e.value;
-            e = e.next;
-        }
+        KeyValue* kv = aa.slots + i;
+        if (kv.key == key)
+            return kv.value;
+        if (!kv.key)
+            return null;
+        i = (i + 1) & aa.mask;
     }
-    return null; // not found
 }
 
 /**
@@ -145,51 +147,56 @@ Returns: a range of key/values for `aa`.
 private struct AARange(K,V)
 {
     AA* aa;
-    // current index into bucket array `aa.b`
+    // current index into the slot table
     size_t bIndex;
-    aaA* current;
+    bool onNull;  // currently on the out-of-band null-key entry
+    bool done = true;
 
     this(AA* aa) pure nothrow @nogc scope
     {
         if (aa)
         {
             this.aa = aa;
-            toNext();
+            done = false;
+            if (aa.hasNull)
+                onNull = true;
+            else
+                toNext();
         }
     }
 
     @property bool empty() const pure nothrow @nogc @safe
     {
-        return current is null;
+        return done;
     }
 
     @property auto front() const pure nothrow @nogc
     {
-        return cast(KeyValueTemplate!(K,V))current.keyValue;
+        if (onNull)
+            return KeyValueTemplate!(K,V)(cast(K)null, cast(V)aa.nullValue);
+        return cast(KeyValueTemplate!(K,V))aa.slots[bIndex];
     }
 
     void popFront() pure nothrow @nogc
     {
-        if (current.next)
-            current = current.next;
-        else
+        if (onNull)
         {
-            bIndex++;
-            toNext();
+            onNull = false;
+            bIndex = 0;
         }
+        else
+            bIndex++;
+        toNext();
     }
 
     private void toNext() pure nothrow @nogc
     {
-        for (; bIndex < aa.b_length; bIndex++)
+        for (; bIndex <= aa.mask; bIndex++)
         {
-            if (auto next = aa.b[bIndex])
-            {
-                current = next;
+            if (aa.slots[bIndex].key !is null)
                 return;
-            }
         }
-        current = null;
+        done = true;
     }
 }
 
@@ -225,39 +232,26 @@ unittest
 /********************************************
  * Rehash an array.
  */
-private void dmd_aaRehash(AA** paa) pure nothrow
+private void dmd_aaRehash(AA* aa) pure nothrow
 {
-    //printf("Rehash\n");
-    if (*paa)
+    const oldCap = aa.mask + 1;
+    KeyValue* old = aa.slots;
+    const newCap = oldCap == aa.sinit.length ? 16 : oldCap * 2;
+    KeyValue* nslots = cast(KeyValue*)mem.xcalloc(newCap, KeyValue.sizeof);
+    const nmask = newCap - 1;
+    foreach (j; 0 .. oldCap)
     {
-        AA* aa = *paa;
-        if (aa)
-        {
-            size_t len = aa.b_length;
-            if (len == 4)
-                len = 32;
-            else
-                len *= 4;
-            aaA** newb = cast(aaA**)mem.xmalloc(aaA.sizeof * len);
-            memset(newb, 0, len * (aaA*).sizeof);
-            for (size_t k = 0; k < aa.b_length; k++)
-            {
-                aaA* e = aa.b[k];
-                while (e)
-                {
-                    aaA* enext = e.next;
-                    size_t j = hash(cast(size_t)e.key) & (len - 1);
-                    e.next = newb[j];
-                    newb[j] = e;
-                    e = enext;
-                }
-            }
-            if (aa.b != cast(aaA**)aa.binit)
-                mem.xfree(aa.b);
-            aa.b = newb;
-            aa.b_length = len;
-        }
+        if (old[j].key is null)
+            continue;
+        size_t i = hash(cast(size_t)old[j].key) & nmask;
+        while (nslots[i].key !is null)
+            i = (i + 1) & nmask;
+        nslots[i] = old[j];
     }
+    if (old !is aa.sinit.ptr)
+        mem.xfree(old);
+    aa.slots = nslots;
+    aa.mask = nmask;
 }
 
 unittest
@@ -287,6 +281,8 @@ struct AssocArray(K,V)
     /**
     Lookup value associated with `key` and return the address to it. If the `key`
     has not been added, it adds it and returns the address to the new value.
+
+    The returned pointer is only valid until the next insertion.
 
     Params:
         key = key to lookup the value for
