@@ -272,6 +272,18 @@ void test22269()
 }
 
 /***************************************************/
+// https://github.com/dlang/dmd/issues/23833
+
+bool isZero23833(double x) { return cast(ulong) x == 0; }
+
+void test23833()
+{
+    assert(isZero23833(0.5));
+    assert(!isZero23833(1.5));
+    assert(!isZero23833(2.0 ^^ 63));
+}
+
+/***************************************************/
 
 int main()
 {
@@ -286,6 +298,7 @@ int main()
     test14218();
     test22269();
     test23262();
+    test23833();
 
     printf("Success\n");
     return 0;
