@@ -1,11 +1,12 @@
 module metrics;
 
-import std.algorithm : min;
+import std.algorithm : min, minElement;
 import std.conv : to;
 import std.datetime.stopwatch : AutoStart, StopWatch;
-import std.file : copy, exists, getSize, remove;
+import std.file : copy, exists, getSize, read, remove;
 import std.path : buildPath;
 import std.regex : ctRegex, matchFirst;
+import std.stdio : writeln;
 
 import std.process : Config, execute;
 
@@ -45,9 +46,10 @@ struct Traces
 }
 
 // Measure every metric for one dmd binary. `tag` ("base"/"head")
-// keeps the two runs' temp files apart
+// keeps the two runs' temp files apart, `cpu` is the core the RSS runs
+// are pinned to, one per side.
 long[string] measure(string dmd, string workload, string phobos,
-    string vibed, string[] vibedFlags, string tmp, string tag)
+    string vibed, string[] vibedFlags, string tmp, string tag, int cpu)
 {
     auto stdPackage = buildPath(phobos, "std", "package.d");
     // Unlike a dub build, which compiles one package per invocation, this pulls
@@ -63,9 +65,9 @@ long[string] measure(string dmd, string workload, string phobos,
         "compile_vibed_instr":          instructions(dmd, vibeFlags, vibed, tmp, tag ~ "-vibed"),
         "dmd_binary_size":              strippedSize(dmd, buildPath(tmp, tag ~ "-dmd")),
         "hello_binary_size":            helloSize(dmd, workload, tmp, tag),
-        "hello_max_rss":                maxRss(dmd, [], workload, tmp, tag),
-        "phobos_max_rss":               maxRss(dmd, phobosFlags, stdPackage, tmp, tag ~ "-phobos"),
-        "vibed_max_rss":                maxRss(dmd, vibeFlags, vibed, tmp, tag ~ "-vibed"),
+        "hello_max_rss":                maxRss(dmd, [], workload, tmp, tag, cpu),
+        "phobos_max_rss":               maxRss(dmd, phobosFlags, stdPackage, tmp, tag ~ "-phobos", cpu),
+        "vibed_max_rss":                maxRss(dmd, vibeFlags, vibed, tmp, tag ~ "-vibed", cpu),
     ];
 }
 
@@ -123,15 +125,26 @@ private void strip(string path)
         throw new Exception("strip failed:\n" ~ r.output);
 }
 
-// Peak RSS (KiB) of compiling the workload (/usr/bin/time)
-private long maxRss(string dmd, string[] dflags, string workload, string tmp, string tag)
+// Peak RSS (KiB) of compiling the workload (/usr/bin/time), min of 3 runs.
+// ASLR and CPU migration each move it by a few hundred KB, so both are fixed,
+// and the binary is read first since the kernel maps its cached pages around
+// every fault.
+private long maxRss(string dmd, string[] dflags, string workload, string tmp, string tag, int cpu)
 {
     auto obj = buildPath(tmp, tag ~ "-rss.o");
-    auto cmd = ["/usr/bin/time", "-v", dmd, "-c"] ~ dflags ~ [workload, "-of=" ~ obj];
-    auto r = execute(cmd);
-    if (r.status != 0)
-        throw new Exception("/usr/bin/time failed:\n" ~ r.output);
-    return parseMaxRss(r.output);
+    auto cmd = ["setarch", "-R", "taskset", "-c", cpu.to!string, "/usr/bin/time", "-v", dmd, "-c"]
+        ~ dflags ~ [workload, "-of=" ~ obj];
+    read(dmd);
+    long[3] runs;
+    foreach (ref run; runs)
+    {
+        auto r = execute(cmd);
+        if (r.status != 0)
+            throw new Exception("/usr/bin/time failed:\n" ~ r.output);
+        run = parseMaxRss(r.output);
+    }
+    writeln(tag, " peak RSS runs: ", runs);
+    return runs[].minElement;
 }
 
 private enum rssRe = ctRegex!(`Maximum resident set size \(kbytes\):\s+(\d+)`);
