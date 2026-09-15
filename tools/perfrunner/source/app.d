@@ -1,5 +1,6 @@
 module app;
 
+import core.sys.linux.sys.prctl : PR_SET_THP_DISABLE, prctl;
 import std.file : mkdirRecurse, tempDir, write;
 import std.getopt : getopt;
 import std.parallelism : task;
@@ -71,12 +72,15 @@ int main(string[] args)
     auto tmp = buildPath(tempDir, "perfrunner");
     mkdirRecurse(tmp);
 
+    // Huge pages add 2 MB steps to peak RSS. Inherited by every child process.
+    prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0);
+
     // Resolved once so both refs compile vibe.d with the same flags.
     auto vibedFlags = describeFlags(vibedDir, diff ? baseDmd : headDmd);
 
     if (!diff)
     {
-        auto m = measure(headDmd, workload, headPhobos, vibedRoot, vibedFlags, tmp, "head");
+        auto m = measure(headDmd, workload, headPhobos, vibedRoot, vibedFlags, tmp, "head", 0);
         auto t = collectTraces(headDmd, workload, headPhobos, tmp, "head");
         if (headSrc.length && hostDmdBin.length)
             m[selfBuild.id] = selfBuildMs(headSrc, hostDmdBin);
@@ -87,9 +91,9 @@ int main(string[] args)
     }
 
     // measure base in a second thread while this one does head
-    auto baseTask = task!measure(baseDmd, workload, basePhobos, vibedRoot, vibedFlags, tmp, "base");
+    auto baseTask = task!measure(baseDmd, workload, basePhobos, vibedRoot, vibedFlags, tmp, "base", 1);
     baseTask.executeInNewThread();
-    auto head = measure(headDmd, workload, headPhobos, vibedRoot, vibedFlags, tmp, "head");
+    auto head = measure(headDmd, workload, headPhobos, vibedRoot, vibedFlags, tmp, "head", 0);
     auto base = baseTask.yieldForce;
 
     auto baseTraces = collectTraces(baseDmd, workload, basePhobos, tmp, "base");
