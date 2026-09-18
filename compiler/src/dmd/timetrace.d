@@ -334,8 +334,7 @@ private struct TimeTraceProfiler
         else
         {
             counters.allocatedMemory = dmd.root.rmem.heapTotal;
-            counters.memoryInUse = dmd.root.rmem.heapTotal -
-                (dmd.root.rmem.CHUNK_SIZE - dmd.root.rmem.heappos);
+            counters.memoryInUse = dmd.root.rmem.heapTotal - dmd.root.rmem.heapleft;
         }
         counters.timepoint = timepoint;
         return counters;
