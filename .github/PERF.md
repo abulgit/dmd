@@ -20,6 +20,6 @@ percent from run to run on shared CI runners, so it is shown as informational me
 | compile vibe.d (instr) | instructions to compile a vibe.d app in one invocation (`-i`) | 0.1% |
 | dmd binary size (stripped) | size of the stripped dmd binary | 0.1% |
 | hello binary size (stripped) | size of the stripped hello executable | 0.1% |
-| peak RSS (compile ...) | maximum resident set size, from `/usr/bin/time -v` | 2% |
+| peak RSS (compile ...) | maximum resident set size, from `/usr/bin/time -v`; ASLR and huge pages off, pinned to one CPU, min of 3 runs | 2% |
 | compile dmd itself (wall) | wall time to build dmd itself, `generated/build dmd BUILD=debug -j1 --force`, min of 3 runs | 2% |
 | compile ... (wall) | total wall time, from `-ftime-trace` | informational |
